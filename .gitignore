@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+wallet*.json
+keystore/
+
+# Dependencies & builds
+node_modules/
+dist/
+build/
+.expo/
+web-build/
+*.apk
+*.aab
+
+# Local data
+data/*.sqlite
+data/*.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

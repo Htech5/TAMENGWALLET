@@ -1,0 +1,13 @@
+{
+  "name": "tameng-wallet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tameng — AI wallet agent for cross-border remittances, with safety rules enforced in code.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test \"policy/**/*.test.ts\" \"agent/**/*.test.ts\" \"onchain/**/*.test.ts\" \"server/**/*.test.ts\""
+  }
+}
