@@ -100,11 +100,13 @@ function startGateway(mode: 'fixed' | 'obedient', tool = 'request_transfer', arg
       const line = out.split('\n').find((l) => l.trim().startsWith('{'));
       if (!line) return;
       clearTimeout(timer);
-      try {
-        resolve({ port: JSON.parse(line).port, stop: () => child.kill() });
-      } catch (failure) {
-        reject(failure);
-      }
+      const port = JSON.parse(line).port;
+      // A printed port is not the same thing as a socket that accepts. Prove the gateway
+      // answers before handing it to a test, otherwise a slow start shows up later as a
+      // "the model was not used" failure somewhere else.
+      ready(port)
+        .then(() => resolve({ port, stop: () => child.kill() }))
+        .catch(reject);
     });
     child.stderr?.on('data', (chunk) => {
       err += chunk;
@@ -114,6 +116,23 @@ function startGateway(mode: 'fixed' | 'obedient', tool = 'request_transfer', arg
       reject(failure);
     });
   });
+}
+
+/** Polls the gateway until it actually answers, so a test never races the process start. */
+async function ready(port: number): Promise<void> {
+  const deadline = Date.now() + 15000;
+  let last = '';
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch('http://127.0.0.1:' + port + '/v1/chat/completions', { method: 'POST', body: '{}' });
+      if (res.ok) return;
+      last = 'HTTP ' + res.status;
+    } catch (failure) {
+      last = failure instanceof Error ? failure.message : String(failure);
+    }
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  throw new Error('mock gateway never answered on port ' + port + ': ' + last);
 }
 
 /** Point the agent at a mock gateway, exactly the way a real LLM_API_KEY would. */
