@@ -106,7 +106,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (path === '/chat' && method === 'POST') {
     const message = String(body.message ?? '');
     if (!message.trim()) throw new ApiError('VALIDATION_ERROR', 'Type a message first.', 400);
-    return send(res, 200, idempotent(key, () => core.chat(message)));
+    // FR-15: the caller may declare where the text came from. Anything but "user" is EXTERNAL.
+    const declared = String(body.source ?? 'user').toLowerCase() === 'user' ? 'USER' : 'EXTERNAL';
+    return send(res, 200, idempotent(key, () => core.chat(message, declared)));
   }
 
   // /confirm/:intentId

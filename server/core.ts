@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { parseIntent } from '../agent/parseIntent.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
 import { findLookalike, type KnownAddress } from '../policy/lookalike.ts';
+import { checkProvenance, type Provenance } from '../policy/provenance.ts';
 import type { PolicyConfig, PolicyResult, TxIntent } from '../policy/types.ts';
 import * as chain from '../onchain/sendUsdc.ts';
 import type {
@@ -290,10 +291,13 @@ export function getWallet(): Wallet {
   return clone(w);
 }
 
-export function chat(message: string): ChatResponse {
+export function chat(message: string, declared: Provenance = 'USER'): ChatResponse {
   const messageId = nextId('m');
   const intent = parseIntent(message ?? '');
   const s = state.settings;
+
+  // FR-15: an order to move money found in forwarded text is never the owner speaking.
+  const provenance = checkProvenance(message ?? '', declared);
 
   if (intent.kind === 'blocked_report') {
     const blocked = state.activity.filter((e) => e.type === 'attempt_blocked');
@@ -335,6 +339,9 @@ export function chat(message: string): ChatResponse {
 
   if (intent.injection.length > 0)
     reasons.push({ code: 'INJECTION_DETECTED', message: 'The message tried to override your safety rules.' });
+
+  if (provenance.blocked)
+    reasons.push({ code: 'EXTERNAL_PROVENANCE', message: provenance.message });
 
   if (intent.address && !known) {
     // A confusably typed address folds onto a real contact, which is exactly the trap:
@@ -390,7 +397,7 @@ export function chat(message: string): ChatResponse {
       intent.address && !known ? 'Transfer to unknown address blocked' : 'Transfer blocked',
       reasons,
       card.amount,
-      intent.injection.length > 0 ? intent.text.slice(0, 120) : undefined,
+      provenance.excerpt ?? (intent.injection.length > 0 ? intent.text.slice(0, 120) : undefined),
     );
     save();
     return { messageId, reply: "I can't do that. Nothing left your wallet.", card };
