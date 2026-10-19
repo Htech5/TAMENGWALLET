@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseIntent } from '../agent/parseIntent.ts';
+import { buildMandateDraft } from '../agent/mandate.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
 import { intentCheck } from '../policy/intentCheck.ts';
 import { checkLimits, clampConfig } from '../policy/permissions.ts';
@@ -451,9 +452,28 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
   }
 
   if (intent.kind === 'mandate') {
+    // The draft is read from the owner's own sentence; the template only supplies the shape.
+    // Filling in its numbers would invent money the owner never asked to send, and a draft
+    // can be confirmed with a PIN. When a piece is missing, ask instead of guessing.
+    const draft = buildMandateDraft(intent.text, byName);
+    if (!draft.ok) {
+      return {
+        messageId,
+        reply: draft.question,
+        card: { type: 'clarify', question: draft.question },
+      };
+    }
+
     const card = clone(DRAFT_TEMPLATE.card) as MandateDraftCard;
     card.intentId = nextId('i');
     card.expiresAt = new Date(Date.now() + INTENT_TTL_MS).toISOString();
+    card.summary = draft.summary;
+    card.mandate = {
+      label: draft.label,
+      recipients: draft.recipients.map((r) => ({ contactId: r.contactId, amount: r.amount })),
+      schedule: draft.schedule,
+      minBalance: draft.minBalance,
+    };
     state.intents[card.intentId] = card;
     save();
     return { messageId, reply: DRAFT_TEMPLATE.reply, card };
