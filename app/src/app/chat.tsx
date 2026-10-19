@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ClarifyView, DecisionView, MandateDraftView } from '@/components/ChatCards';
@@ -9,6 +9,7 @@ import { Tam } from '@/components/Tam';
 import { Chip, CircleButton, T } from '@/components/ui';
 import { api } from '@/lib/api';
 import { chatStore, ChatItem, useChat } from '@/lib/chatStore';
+import { useKeyboardOpen } from '@/lib/hooks';
 import { Contact } from '@/lib/types';
 import { c, f, r } from '@/theme';
 
@@ -23,6 +24,8 @@ export default function Chat() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const scroll = useRef<ScrollView>(null);
   const autoSent = useRef(false);
+  // Android edge-to-edge no longer resizes the window, so the composer is lifted by padding on both platforms.
+  const kbOpen = useKeyboardOpen(() => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 50));
 
   useEffect(() => {
     api.getContacts().then((x) => setContacts(x.items)).catch(() => {});
@@ -60,7 +63,7 @@ export default function Chat() {
   }, [params.auto, params.prefill]);
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.bg }} behavior="padding">
       <View style={[st.band, { paddingTop: insets.top + 12 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <CircleButton icon="back" label="Back" bg={c.bg} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
@@ -101,7 +104,7 @@ export default function Chat() {
         )}
       </ScrollView>
 
-      <View style={[st.composer, { paddingBottom: 10 + insets.bottom }]}>
+      <View style={[st.composer, { paddingBottom: 10 + (kbOpen ? 0 : insets.bottom) }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
           {SUGGESTIONS.map((s) => (
             <Chip key={s} label={s} onPress={() => send(s)} />

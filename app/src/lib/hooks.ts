@@ -1,5 +1,6 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Keyboard } from 'react-native';
 
 import { ApiError } from './types';
 
@@ -44,4 +45,23 @@ export function useNow(ms = 30000) {
     return () => clearInterval(t);
   }, [ms]);
   return now;
+}
+
+/** True while the on-screen keyboard is up, so bottom bars can drop the home-indicator inset. */
+export function useKeyboardOpen(onShow?: () => void) {
+  const [open, setOpen] = useState(false);
+  const cb = useRef(onShow);
+  cb.current = onShow;
+  useEffect(() => {
+    const a = Keyboard.addListener('keyboardDidShow', () => {
+      setOpen(true);
+      cb.current?.();
+    });
+    const b = Keyboard.addListener('keyboardDidHide', () => setOpen(false));
+    return () => {
+      a.remove();
+      b.remove();
+    };
+  }, []);
+  return open;
 }
