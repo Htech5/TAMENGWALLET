@@ -1,3 +1,5 @@
+.playwright-mcp/
+node_modules/
 # Secrets — never commit
 .env
 .env.*
@@ -19,6 +21,9 @@ web-build/
 # Local data
 data/*.sqlite
 data/*.db
+data/*.json
+data/*.log
+data/*.broken-*
 
 # OS / editor
 .DS_Store
