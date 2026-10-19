@@ -1,0 +1,22 @@
+{
+  "owner": { "name": "Rudi" },
+  "address": "0x7a3F1c09b5E24d8A6f0e3B7c2D91a4e5F08b91cE",
+  "addressShort": "0x7a3F…91cE",
+  "network": "base-sepolia",
+  "balance": "312.40",
+  "paused": false,
+  "nextRun": {
+    "mandateId": "md-2",
+    "label": "School fee · Adik",
+    "schedule": { "type": "monthly", "dayOfMonth": 10 },
+    "at": "2026-10-20T02:00:00Z",
+    "total": "35.00",
+    "status": "postponed",
+    "recipients": [{ "name": "Adik", "amount": "35.00" }]
+  },
+  "mandates": { "active": 1, "total": 3 },
+  "savings": { "balance": "340.00", "target": "1000.00" },
+  "feesSaved": { "month": "2026-10", "totalUsd": "5.12", "benchmarkPct": "5.13" },
+  "protection": { "month": "2026-10", "checked": 14, "blocked": 2 },
+  "unreadEvents": 2
+}

@@ -137,7 +137,7 @@ Contoh lengkap: `app/mocks/chat-confirm.json`, `chat-deny.json`, `chat-clarify.j
 Untuk `MandateDraftCard`, `mandate` berisi `Mandate` yang baru aktif dan `tx` null.
 
 ### GET `/wallet`
-Semua data Home dalam satu panggilan. Contoh: `app/mocks/wallet.json`.
+Semua data Home dalam satu panggilan. Contoh: `app/mocks/home-wallet.json` (nama file sengaja tidak diawali `wallet`, karena `.gitignore` memblokir `wallet*.json` untuk file kunci).
 ```ts
 interface Wallet {
   owner: { name: string };

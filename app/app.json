@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Tameng",
+    "slug": "tameng",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.larpathon.tameng"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#D4FF3A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.larpathon.tameng"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Tameng uses Face ID to confirm transfers."
+        }
+      ]
+    ],
+    "scheme": "tameng",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#D9DADB"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
