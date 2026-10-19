@@ -1,0 +1,127 @@
+{
+  "unread": 2,
+  "nextCursor": null,
+  "items": [
+    {
+      "id": "e-120",
+      "type": "attempt_blocked",
+      "at": "2026-10-18T14:22:10Z",
+      "read": false,
+      "title": "Transfer to look-alike address blocked",
+      "amount": "60.00",
+      "source": "external",
+      "excerpt": "Ibu changed her wallet, please send this month's money to 0xfef6…54dc",
+      "reasons": [
+        {
+          "code": "LOOKALIKE_ADDRESS",
+          "message": "This address looks like Ibu's but is a different wallet."
+        },
+        {
+          "code": "EXTERNAL_PROVENANCE",
+          "message": "The instruction came from a forwarded message, not from you."
+        }
+      ]
+    },
+    {
+      "id": "e-119",
+      "type": "attempt_blocked",
+      "at": "2026-10-17T09:05:44Z",
+      "read": false,
+      "title": "Unlimited token approval blocked",
+      "source": "external",
+      "excerpt": "Claim your 500 USDC airdrop now",
+      "reasons": [
+        {
+          "code": "INTENT_MISMATCH",
+          "message": "The transaction was an unlimited approval, not the claim it described."
+        }
+      ]
+    },
+    {
+      "id": "e-118",
+      "type": "run_postponed",
+      "at": "2026-10-10T02:00:03Z",
+      "read": true,
+      "title": "School fee · Adik postponed",
+      "amount": "35.00",
+      "mandateId": "md-2",
+      "recipient": {
+        "contactId": "c-adik",
+        "name": "Adik",
+        "addressShort": "0x0047…62ea"
+      },
+      "reasons": [
+        {
+          "code": "BELOW_MIN_BALANCE",
+          "message": "Sending now would leave less than your 50.00 USDC minimum."
+        }
+      ]
+    },
+    {
+      "id": "e-117",
+      "type": "transfer_sent",
+      "at": "2026-10-01T02:00:09Z",
+      "read": true,
+      "title": "20.00 USDC moved to Savings",
+      "amount": "20.00",
+      "recipient": {
+        "contactId": "savings",
+        "name": "Savings",
+        "addressShort": "0x286d…b329"
+      },
+      "mandateId": "md-1",
+      "source": "mandate",
+      "tx": {
+        "hash": "0x0648a8274e7e9835927e8504291050392743b3e690fdac7ee8ae5ecc3bd34b2d",
+        "explorerUrl": "https://sepolia.basescan.org/tx/0x0648a8274e7e9835927e8504291050392743b3e690fdac7ee8ae5ecc3bd34b2d",
+        "status": "confirmed"
+      },
+      "feeUsd": "0.0019",
+      "savedVsBenchmarkUsd": "1.02"
+    },
+    {
+      "id": "e-116",
+      "type": "transfer_sent",
+      "at": "2026-10-01T02:00:07Z",
+      "read": true,
+      "title": "20.00 USDC sent to Adik",
+      "amount": "20.00",
+      "recipient": {
+        "contactId": "c-adik",
+        "name": "Adik",
+        "addressShort": "0x0047…62ea"
+      },
+      "mandateId": "md-1",
+      "source": "mandate",
+      "tx": {
+        "hash": "0xc03c6b9eed5ced15c8e86572e4725aabc2b80ba7be0cd5afcead1b664a51cd39",
+        "explorerUrl": "https://sepolia.basescan.org/tx/0xc03c6b9eed5ced15c8e86572e4725aabc2b80ba7be0cd5afcead1b664a51cd39",
+        "status": "confirmed"
+      },
+      "feeUsd": "0.0019",
+      "savedVsBenchmarkUsd": "1.02"
+    },
+    {
+      "id": "e-115",
+      "type": "transfer_sent",
+      "at": "2026-10-01T02:00:05Z",
+      "read": true,
+      "title": "60.00 USDC sent to Ibu",
+      "amount": "60.00",
+      "recipient": {
+        "contactId": "c-ibu",
+        "name": "Ibu",
+        "addressShort": "0xfef6…54dc"
+      },
+      "mandateId": "md-1",
+      "source": "mandate",
+      "tx": {
+        "hash": "0x1b2c9089ce44697403f9f796a243926b22c328a6e1134b705415d1880762f789",
+        "explorerUrl": "https://sepolia.basescan.org/tx/0x1b2c9089ce44697403f9f796a243926b22c328a6e1134b705415d1880762f789",
+        "status": "confirmed"
+      },
+      "feeUsd": "0.0021",
+      "savedVsBenchmarkUsd": "3.08"
+    }
+  ]
+}

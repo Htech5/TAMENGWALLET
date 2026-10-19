@@ -20,6 +20,11 @@ Home · Chat (decision cards Allow / Confirm / Deny) · Mandates · Activity · 
 | TMG-28 | Savings counter vs 5.57% World Bank benchmark (FR-24) | |
 | TMG-37 | Build APK + Expo Go link, fallback web build (NFR-12) | |
 
+## API and mocks
+
+- Contract: [`docs/API_CONTRACT.md`](../docs/API_CONTRACT.md)
+- Mock responses in [`mocks/`](mocks/), one file per endpoint or chat card type. Build screens against these until `server/` is up, then switch `EXPO_PUBLIC_API_URL`.
+
 ## Rules
 
 - No API keys or private keys in this folder. Everything goes through the backend API.

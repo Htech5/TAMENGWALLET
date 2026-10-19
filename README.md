@@ -76,9 +76,11 @@ npm test
 - **LLM:** tool calling; API keys live on the backend only.
 - **Network:** Base Sepolia testnet, USDC.
 
-## Backend API
+## Docs for the team
 
-`POST /chat` · `POST /confirm/:intentId` · `GET /wallet` · `GET /activity` · `GET/POST/PATCH /mandates` · `GET/POST/DELETE /contacts` · `PATCH /settings` · `POST /benchmark/run`
+- [`PRD.md`](PRD.md) — scope, roles, security pipeline, acceptance criteria
+- [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) — app ↔ server contract
+- [`app/mocks/`](app/mocks/) — example responses for every endpoint
 
 ## Security rules for the team
 

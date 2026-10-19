@@ -1,0 +1,8 @@
+{
+  "perTxLimit": "100.00",
+  "dailyLimit": "300.00",
+  "confirmAbove": "25.00",
+  "savingsTarget": "1000.00",
+  "demoMode": true,
+  "paused": false
+}

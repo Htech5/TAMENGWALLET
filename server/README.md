@@ -17,4 +17,4 @@ Node.js ≥ 22.18, TypeScript. Exposes the API the mobile app calls and wires `a
 | PATCH | `/settings` | Settings (PIN / biometrics required) |
 | POST | `/benchmark/run` | Attack benchmark (TMG-26) |
 
-Agree on request/response shapes with Faris (app) before building each endpoint.
+Request/response shapes, PIN rules and error codes: [`docs/API_CONTRACT.md`](../docs/API_CONTRACT.md). Example responses the app is built against: [`app/mocks/`](../app/mocks/). Change the contract together with Faris, then update the mocks. Product scope and security pipeline: [`PRD.md`](../PRD.md).

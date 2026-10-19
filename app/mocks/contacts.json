@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "c-ibu",
+      "name": "Ibu",
+      "address": "0xfef60ecfd3208322e9d8411632ad8d696bba54dc",
+      "addressShort": "0xfef6…54dc",
+      "verifiedAt": "2026-10-01T03:12:00Z"
+    },
+    {
+      "id": "c-adik",
+      "name": "Adik",
+      "address": "0x0047bad3d698950894fd8c3a98084ce2d52d62ea",
+      "addressShort": "0x0047…62ea",
+      "verifiedAt": "2026-10-01T03:15:00Z"
+    }
+  ]
+}

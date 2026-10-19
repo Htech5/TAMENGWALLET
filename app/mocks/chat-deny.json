@@ -1,0 +1,33 @@
+{
+  "messageId": "m-383",
+  "reply": "I can't do that. The address isn't one of your contacts and the amount is over your limits.",
+  "card": {
+    "type": "decision",
+    "intentId": "i-79",
+    "decision": "deny",
+    "summary": "No money moved. This request was blocked.",
+    "action": "transfer",
+    "amount": "312.40",
+    "token": "USDC",
+    "recipient": null,
+    "rawAddressShort": "0x9999…9999",
+    "networkFeeUsd": "0.0021",
+    "savedVsBenchmarkUsd": "0.00",
+    "reasons": [
+      {
+        "code": "NOT_IN_ALLOWLIST",
+        "message": "0x9999…9999 is not one of your trusted contacts."
+      },
+      {
+        "code": "OVER_PER_TX_LIMIT",
+        "message": "312.40 USDC is above your 100.00 USDC per-transfer limit."
+      },
+      {
+        "code": "INJECTION_DETECTED",
+        "message": "The message tried to override your safety rules."
+      }
+    ],
+    "expiresAt": null,
+    "tx": null
+  }
+}

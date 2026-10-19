@@ -1,0 +1,32 @@
+{
+  "messageId": "m-382",
+  "reply": "Done. 10 USDC is on its way to Adik.",
+  "card": {
+    "type": "decision",
+    "intentId": "i-78",
+    "decision": "allow",
+    "summary": "10.00 USDC is being sent to Adik.",
+    "action": "transfer",
+    "amount": "10.00",
+    "token": "USDC",
+    "recipient": {
+      "contactId": "c-adik",
+      "name": "Adik",
+      "addressShort": "0x0047…62ea"
+    },
+    "networkFeeUsd": "0.0019",
+    "savedVsBenchmarkUsd": "0.51",
+    "reasons": [
+      {
+        "code": "WITHIN_LIMITS",
+        "message": "Within all your limits, to a trusted contact."
+      }
+    ],
+    "expiresAt": null,
+    "tx": {
+      "hash": "0xffe84882839148927efbbc743061b1d924a109244d0d3d18ed7aaf7039379dd0",
+      "explorerUrl": "https://sepolia.basescan.org/tx/0xffe84882839148927efbbc743061b1d924a109244d0d3d18ed7aaf7039379dd0",
+      "status": "pending"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "messageId": "m-385",
+  "reply": "Here's the auto-send I'll set up. Confirm with your PIN to turn it on.",
+  "card": {
+    "type": "mandate_draft",
+    "intentId": "i-80",
+    "summary": "Every month on the 1st: 60 to Ibu, 20 to Adik, 20 to Savings. Keeps at least 50 USDC.",
+    "mandate": {
+      "recipients": [
+        {
+          "contactId": "c-ibu",
+          "amount": "60.00"
+        },
+        {
+          "contactId": "c-adik",
+          "amount": "20.00"
+        },
+        {
+          "contactId": "savings",
+          "amount": "20.00"
+        }
+      ],
+      "schedule": {
+        "type": "monthly",
+        "dayOfMonth": 1
+      },
+      "minBalance": "50.00"
+    },
+    "expiresAt": "2026-10-19T06:15:00Z"
+  }
+}

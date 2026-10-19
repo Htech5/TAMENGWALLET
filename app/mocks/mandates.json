@@ -1,0 +1,120 @@
+{
+  "items": [
+    {
+      "id": "md-1",
+      "label": "Monthly · 3 recipients",
+      "recipients": [
+        {
+          "contactId": "c-ibu",
+          "name": "Ibu",
+          "addressShort": "0xfef6…54dc",
+          "amount": "60.00"
+        },
+        {
+          "contactId": "c-adik",
+          "name": "Adik",
+          "addressShort": "0x0047…62ea",
+          "amount": "20.00"
+        },
+        {
+          "contactId": "savings",
+          "name": "Savings",
+          "addressShort": "0x286d…b329",
+          "amount": "20.00"
+        }
+      ],
+      "total": "100.00",
+      "schedule": {
+        "type": "monthly",
+        "dayOfMonth": 1
+      },
+      "minBalance": "50.00",
+      "status": "active",
+      "nextRunAt": "2026-11-01T02:00:00Z",
+      "lastRun": {
+        "id": "run-1-202610",
+        "at": "2026-10-01T02:00:05Z",
+        "status": "sent",
+        "txs": [
+          {
+            "hash": "0x1b2c9089ce44697403f9f796a243926b22c328a6e1134b705415d1880762f789",
+            "explorerUrl": "https://sepolia.basescan.org/tx/0x1b2c9089ce44697403f9f796a243926b22c328a6e1134b705415d1880762f789",
+            "status": "confirmed"
+          },
+          {
+            "hash": "0xc03c6b9eed5ced15c8e86572e4725aabc2b80ba7be0cd5afcead1b664a51cd39",
+            "explorerUrl": "https://sepolia.basescan.org/tx/0xc03c6b9eed5ced15c8e86572e4725aabc2b80ba7be0cd5afcead1b664a51cd39",
+            "status": "confirmed"
+          },
+          {
+            "hash": "0x0648a8274e7e9835927e8504291050392743b3e690fdac7ee8ae5ecc3bd34b2d",
+            "explorerUrl": "https://sepolia.basescan.org/tx/0x0648a8274e7e9835927e8504291050392743b3e690fdac7ee8ae5ecc3bd34b2d",
+            "status": "confirmed"
+          }
+        ]
+      },
+      "consecutivePostpones": 0
+    },
+    {
+      "id": "md-2",
+      "label": "School fee · Adik",
+      "recipients": [
+        {
+          "contactId": "c-adik",
+          "name": "Adik",
+          "addressShort": "0x0047…62ea",
+          "amount": "35.00"
+        }
+      ],
+      "total": "35.00",
+      "schedule": {
+        "type": "monthly",
+        "dayOfMonth": 10
+      },
+      "minBalance": "50.00",
+      "status": "postponed",
+      "nextRunAt": "2026-10-20T02:00:00Z",
+      "lastRun": {
+        "id": "run-2-202610",
+        "at": "2026-10-10T02:00:03Z",
+        "status": "postponed",
+        "txs": []
+      },
+      "consecutivePostpones": 1
+    },
+    {
+      "id": "md-3",
+      "label": "Demo · every 2 min",
+      "recipients": [
+        {
+          "contactId": "c-ibu",
+          "name": "Ibu",
+          "addressShort": "0xfef6…54dc",
+          "amount": "60.00"
+        },
+        {
+          "contactId": "c-adik",
+          "name": "Adik",
+          "addressShort": "0x0047…62ea",
+          "amount": "20.00"
+        },
+        {
+          "contactId": "savings",
+          "name": "Savings",
+          "addressShort": "0x286d…b329",
+          "amount": "20.00"
+        }
+      ],
+      "total": "100.00",
+      "schedule": {
+        "type": "interval",
+        "minutes": 2
+      },
+      "minBalance": "50.00",
+      "status": "paused",
+      "nextRunAt": null,
+      "lastRun": null,
+      "consecutivePostpones": 0
+    }
+  ]
+}
