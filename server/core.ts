@@ -160,9 +160,12 @@ function policyConfig(): PolicyConfig {
 }
 
 /** USDC is a dollar stablecoin, so 1 USDC counts as 1 USD for the limits. */
-function gate(to: string, amountUsdc: number): PolicyResult {
+function gate(to: string, amountUsdc: number, stage = 'check'): PolicyResult {
   const intent: TxIntent = { action: 'transfer', chainId: chain.chainId, to, token: 'USDC', amountUsd: amountUsdc };
-  return checkPolicy(intent, policyConfig(), { spentTodayUsd: sentToday(), paused: state.settings.paused });
+  const result = checkPolicy(intent, policyConfig(), { spentTodayUsd: sentToday(), paused: state.settings.paused });
+  // FR-22: every decision is recorded, not only the ones that blocked something.
+  audit('policy_decision', { stage, to, amount: fmt(amountUsdc), decision: result.decision, reasons: result.reasons });
+  return result;
 }
 
 /** policy/ owns the rules; this owns the wording the app shows. */
@@ -229,7 +232,7 @@ function settlePending(): void {
 
 /** The only path that moves money. Re-runs the gate, so no caller can skip it. */
 function executeTransfer(contact: Contact, amount: number, source: 'chat' | 'mandate'): TxRef {
-  const verdict = gate(contact.address, amount);
+  const verdict = gate(contact.address, amount, 'pre-sign');
   if (verdict.decision === 'deny') {
     const reasons = verdict.reasons.map((r) => toReason(r, amount, contact.addressShort));
     logBlocked('Transfer to ' + contact.name + ' blocked', reasons, fmt(amount));
@@ -705,6 +708,7 @@ export function patchSettings(body: Partial<Settings>): Settings {
 
   const wasPaused = state.settings.paused;
   state.settings = { ...state.settings, ...body };
+  audit('settings_changed', { patch: body });
   if (body.paused !== undefined && body.paused !== wasPaused) {
     logEvent({
       type: body.paused ? 'agent_paused' : 'agent_resumed',
