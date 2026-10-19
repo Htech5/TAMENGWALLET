@@ -59,7 +59,13 @@ function useActions(item: ChatItem) {
 export function DecisionView({ item, card }: { item: ChatItem; card: DecisionCard }) {
   const { busy, err, run } = useActions(item);
   const out = item.outcome;
-  const to = card.recipient ? `${card.recipient.name} · ${card.recipient.addressShort}` : card.rawAddressShort ?? 'Unknown address';
+  // When the requested address is not the contact's (look-alike), show the address that was asked for,
+  // never the trusted contact's, so the card can't make a fake address look legitimate.
+  const to = card.rawAddressShort
+    ? `${card.rawAddressShort}${card.recipient ? `, not ${card.recipient.name}'s` : ''}`
+    : card.recipient
+      ? `${card.recipient.name} · ${card.recipient.addressShort}`
+      : 'Unknown address';
 
   let tone: 'allow' | 'confirm' | 'deny' | 'done' | 'cancel' = card.decision;
   if (out?.status === 'executed') tone = 'done';
@@ -83,7 +89,7 @@ export function DecisionView({ item, card }: { item: ChatItem; card: DecisionCar
           : out?.status === 'denied'
             ? 'Blocked when re-checked'
             : 'Cancelled. Nothing was sent.'
-        : `${usdc(card.amount)} USDC to ${card.recipient?.name ?? 'unknown'}`;
+        : `${usdc(card.amount)} USDC to ${card.rawAddressShort ?? card.recipient?.name ?? 'unknown'}`;
 
   const tx = out?.tx ?? card.tx;
 
@@ -99,7 +105,7 @@ export function DecisionView({ item, card }: { item: ChatItem; card: DecisionCar
         <View style={{ paddingHorizontal: 14 }}>
           <KV
             rows={[
-              ['Amount', `${usdc(card.amount)} USDC`],
+              ...(Number.parseFloat(card.amount) > 0 ? ([['Amount', `${usdc(card.amount)} USDC`]] as [string, string][]) : []),
               ['To', to],
               ['Network', 'Base Sepolia'],
               ...(tone !== 'deny'

@@ -26,10 +26,12 @@ export default function Settings() {
   const [editing, setEditing] = useState<NumKey | null>(null);
   const [draft, setDraft] = useState('');
   const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
+  const [rowErr, setRowErr] = useState<string | null>(null);
   const s = q.data;
 
-  const patch = async (body: Partial<S>, title: string, needsPin = true) => {
+  const patch = async (body: Partial<S>, title: string, needsPin = true, inline = false) => {
     setMsg(null);
+    setRowErr(null);
     try {
       const out = needsPin ? await ask({ title, run: (pin) => api.patchSettings(body, pin) }) : await api.patchSettings(body);
       if (out) {
@@ -38,7 +40,10 @@ export default function Settings() {
         setMsg({ text: 'Saved.' });
       }
     } catch (e) {
-      setMsg({ text: e instanceof ApiError ? e.message : 'Could not save. Try again.', bad: true });
+      const text = e instanceof ApiError ? e.message : 'Could not save. Try again.';
+      // Server-side limit checks (400 VALIDATION_ERROR) stay next to the field being edited.
+      if (inline && e instanceof ApiError && e.code === 'VALIDATION_ERROR') setRowErr(text);
+      else setMsg({ text, bad: true });
     }
   };
 
@@ -77,6 +82,7 @@ export default function Settings() {
                   onPress={() => {
                     setEditing(editing === row.key ? null : row.key);
                     setDraft(s[row.key]);
+                    setRowErr(null);
                   }}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
                 >
@@ -103,9 +109,14 @@ export default function Settings() {
                       height={48}
                       style={{ width: 96 }}
                       disabled={!/^\d+(\.\d{1,6})?$/.test(draft.trim())}
-                      onPress={() => patch({ [row.key]: Number.parseFloat(draft).toFixed(2) } as Partial<S>, row.title)}
+                      onPress={() => patch({ [row.key]: Number.parseFloat(draft).toFixed(2) } as Partial<S>, row.title, true, true)}
                     />
                   </View>
+                )}
+                {editing === row.key && rowErr && (
+                  <T v="small" style={{ color: c.pinkInk }}>
+                    {rowErr}
+                  </T>
                 )}
               </View>
             ))}
