@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseIntent } from '../agent/parseIntent.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
+import { findLookalike, type KnownAddress } from '../policy/lookalike.ts';
 import type { PolicyConfig, PolicyResult, TxIntent } from '../policy/types.ts';
 import * as chain from '../onchain/sendUsdc.ts';
 import type {
@@ -131,14 +132,13 @@ function byName(text: string): Contact | undefined {
   return undefined;
 }
 
-/** An address sharing a head or tail with a known contact is a typo-squat, not a new friend. */
-function lookalikeOf(address: string): Contact | undefined {
-  const a = address.toLowerCase();
-  return allContacts().find(
-    (c) =>
-      c.address.toLowerCase() !== a &&
-      (c.address.slice(0, 6).toLowerCase() === a.slice(0, 6) || c.address.slice(-4).toLowerCase() === a.slice(-4)),
-  );
+/** FR-17: policy/lookalike.ts owns the comparison; this only supplies the known addresses. */
+function lookalikeOf(address: string): { contact: Contact; message: string } | undefined {
+  const known: KnownAddress[] = allContacts().map((c) => ({ id: c.id, name: c.name, address: c.address }));
+  const hit = findLookalike(address, known);
+  if (!hit) return undefined;
+  const contact = allContacts().find((c) => c.id === hit.contact.id) as Contact;
+  return { contact, message: hit.message };
 }
 
 function sentToday(): number {
@@ -328,7 +328,8 @@ export function chat(message: string): ChatResponse {
     };
   }
 
-  const known = intent.address ? byAddress(intent.address) : undefined;
+  // A confusably written address never counts as "known", even if it folds onto a contact.
+  const known = intent.address && !intent.addressConfusable ? byAddress(intent.address) : undefined;
   const target = known ?? byName(intent.text);
   const reasons: Reason[] = [];
 
@@ -336,12 +337,21 @@ export function chat(message: string): ChatResponse {
     reasons.push({ code: 'INJECTION_DETECTED', message: 'The message tried to override your safety rules.' });
 
   if (intent.address && !known) {
+    // A confusably typed address folds onto a real contact, which is exactly the trap:
+    // it reads as Adik, it is not Adik, and the owner should hear why.
+    const folded = intent.addressConfusable ? byAddress(intent.address) : undefined;
     const look = lookalikeOf(intent.address);
-    reasons.push(
-      look
-        ? { code: 'LOOKALIKE_ADDRESS', message: 'This address looks like ' + look.name + "'s but is a different wallet." }
-        : { code: 'NOT_IN_ALLOWLIST', message: short(intent.address) + ' is not one of your trusted contacts.' },
-    );
+    if (folded)
+      reasons.push({
+        code: 'LOOKALIKE_ADDRESS',
+        message: "That address is written with characters that imitate " + folded.name + "'s wallet.",
+      });
+    else
+      reasons.push(
+        look
+          ? { code: 'LOOKALIKE_ADDRESS', message: look.message }
+          : { code: 'NOT_IN_ALLOWLIST', message: short(intent.address) + ' is not one of your trusted contacts.' },
+      );
   }
 
   // An injection with no amount is read as "take everything", which is what the attacker meant.
@@ -626,12 +636,10 @@ export function addContact(name: string, address: string): Contact {
     throw new ApiError('VALIDATION_ERROR', 'That address should start with 0x and have 42 characters.', 400);
 
   const look = lookalikeOf(a);
-  if (look)
-    throw new ApiError(
-      'LOOKALIKE_ADDRESS',
-      "This address looks like " + look.name + "'s. Check it with them before adding it.",
-      409,
-    );
+  if (look) {
+    audit('blocked', { title: 'Look-alike contact rejected', address: a, like: look.contact.id });
+    throw new ApiError('LOOKALIKE_ADDRESS', look.message + ' Check it with them before adding it.', 409);
+  }
 
   const contact: Contact = {
     id: nextId('c'),

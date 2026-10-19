@@ -5,6 +5,7 @@
 // TODO(TMG-49): swap in LLM tool-calling when LLM_API_KEY is set. Keep the same return shape.
 
 import { detectInjection } from '../policy/detectInjection.ts';
+import { normaliseAddress } from '../policy/lookalike.ts';
 
 export type IntentKind = 'send' | 'mandate' | 'blocked_report' | 'help';
 
@@ -14,10 +15,13 @@ export interface ParsedIntent {
   address: string | null;
   nameHint: string | null;
   injection: string[];
+  /** True when the address was written with look-alike characters (O for 0, l for 1). */
+  addressConfusable: boolean;
   text: string;
 }
 
-const ADDRESS = /0x[0-9a-fA-F]{4,40}/;
+// Deliberately loose: a confusably written address is still an address attempt.
+const ADDRESS = /0x[0-9a-zA-Z]{4,40}/;
 const SEND = /\b(send|kirim|transfer|pay|bayar|move|pindah)\b/i;
 const MANDATE = /\b(auto.?send|every month|monthly|tiap bulan|setiap bulan|mandate|rutin)\b/i;
 const BLOCKED = /\b(what did you block|blocked|diblokir|serangan|attack)\b/i;
@@ -28,7 +32,10 @@ const WALLET_ABUSE = /\b(all (my |the )?(funds|money|balance)|semua (uang|saldo)
 export function parseIntent(message: string): ParsedIntent {
   const text = message.trim();
   const lower = text.toLowerCase();
-  const address = text.match(ADDRESS)?.[0] ?? null;
+  const rawAddress = text.match(ADDRESS)?.[0] ?? null;
+  const normalised = rawAddress ? normaliseAddress(rawAddress) : undefined;
+  const address = normalised?.address ?? rawAddress;
+  const addressConfusable = normalised?.confusable ?? false;
 
   const amountMatch = lower
     .replace(/0x[0-9a-f]+/gi, ' ')
@@ -46,5 +53,5 @@ export function parseIntent(message: string): ParsedIntent {
   else if (MANDATE.test(lower) && injection.length === 0) kind = 'mandate';
   else if (SEND.test(lower) || amount !== null || address || injection.length > 0) kind = 'send';
 
-  return { kind, amount, address, nameHint, injection, text };
+  return { kind, amount, address, nameHint, injection, addressConfusable, text };
 }
