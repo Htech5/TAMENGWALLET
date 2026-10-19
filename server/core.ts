@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { parseIntent } from '../agent/parseIntent.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
 import { intentCheck } from '../policy/intentCheck.ts';
+import { checkLimits, clampConfig } from '../policy/permissions.ts';
 import { findLookalike, type KnownAddress } from '../policy/lookalike.ts';
 import { checkProvenance, type Provenance } from '../policy/provenance.ts';
 import type { PolicyConfig, PolicyResult, TxIntent } from '../policy/types.ts';
@@ -152,15 +153,10 @@ function sentToday(): number {
     .reduce((sum, e) => sum + n(e.amount ?? '0'), 0);
 }
 
+/** FR-20: owner limits are clamped to the compiled-in ceilings, never the other way round. */
 function policyConfig(): PolicyConfig {
-  return {
-    perTxLimitUsd: n(state.settings.perTxLimit),
-    dailyLimitUsd: n(state.settings.dailyLimit),
-    confirmAboveUsd: n(state.settings.confirmAbove),
-    allowedChains: [chain.chainId],
-    allowedActions: ['transfer'],
-    allowlist: allContacts().map((c) => c.address),
-  };
+  const limits = clampConfig(n(state.settings.perTxLimit), n(state.settings.dailyLimit), n(state.settings.confirmAbove));
+  return { ...limits, allowlist: allContacts().map((c) => c.address) };
 }
 
 /** USDC is a dollar stablecoin, so 1 USDC counts as 1 USD for the limits. */
@@ -700,6 +696,13 @@ export function patchSettings(body: Partial<Settings>): Settings {
     if (v !== undefined && !/^\d+(\.\d{1,6})?$/.test(String(v)))
       throw new ApiError('VALIDATION_ERROR', 'Limits must be a plain number like 100.00.', 400);
   }
+  // FR-20: an owner may tighten their limits, never widen them past the compiled ceilings.
+  const bounds = checkLimits(body);
+  if (!bounds.ok) {
+    audit('permission_denied', { patch: body, violations: bounds.violations });
+    throw new ApiError('VALIDATION_ERROR', bounds.violations[0], 400);
+  }
+
   const wasPaused = state.settings.paused;
   state.settings = { ...state.settings, ...body };
   if (body.paused !== undefined && body.paused !== wasPaused) {
