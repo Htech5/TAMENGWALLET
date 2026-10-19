@@ -130,6 +130,41 @@ describing one is not allowed to become a `mandate`, because that branch produce
 confirmable card. An incomplete request that still asks to move money falls back to `send`,
 so it meets the gate instead of a silent "help" reply.
 
+## Choosing a model
+
+`agent/check-llm.mjs` tests whether a gateway can actually drive this reader. It sends the
+same request `parseIntent()` sends and reports whether the answer comes back as a **tool
+call**. A provider that only returns text is not enough: the reader would see no answer and
+silently fall back to the rules.
+
+```bash
+node agent/check-llm.mjs                       # reads .env
+node agent/check-llm.mjs --base https://... --model ... --key ...
+```
+
+Exit 0 means the gateway is usable, 2 means it answers but not with tool calls, 1 means the
+request failed.
+
+`agent/mock-llm.mjs` is a local stand-in that obeys the attacker on purpose, for checking that
+the policy gate — not the prompt — is what stops a transfer:
+
+```bash
+node agent/mock-llm.mjs                        # terminal 1, port 8787
+$env:LLM_BASE_URL='http://127.0.0.1:8787/v1'; $env:LLM_API_KEY='test'; npm run server
+```
+
+### Latency, measured
+
+An [OI]-compatible gateway is not automatically fast enough. Measured on a hosted NVIDIA NIM
+endpoint (2026-10-19): the same sentence took 3.5 s once and 46 s the next time, and the
+54-case benchmark took **401 s**. Several other models on that endpoint exceeded a 60 s
+timeout or answered without a tool call at all.
+
+So: the gate is correct either way, but a slow model makes the chat feel broken and the
+benchmark unusable for a live demo. If a request times out, `parseIntent` falls back to the
+rule reader, which is safe but means the model was not used. For a demo, either keep
+`LLM_DISABLED=1` (rules are instant and the gate is identical) or use a model that answers in
+under a second. `LLM_TIMEOUT_MS` is the knob.
 ## Tests (`parseIntent.test.ts`, `mandate.test.ts`)
 
 The model in `parseIntent.test.ts` is a mock OpenAI-compatible gateway running in its own process: the real
