@@ -30,3 +30,6 @@ data/*.broken-*
 Thumbs.db
 .vscode/
 .idea/
+
+# Bukti pengujian lokal, bukan bagian dari repo
+screenshot hasil pengujian/

@@ -8,6 +8,7 @@ import { networkInterfaces } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 import type { Settings } from '../app/src/lib/types.ts';
+import { runBenchmark } from './benchmark.ts';
 import * as core from './core.ts';
 import { ApiError } from './core.ts';
 import { save, state } from './store.ts';
@@ -156,6 +157,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     core.deleteContact(decodeURIComponent(seg[1]));
     return send(res, 204);
   }
+
+  // /benchmark/run (FR-28) — runs on a snapshot, restores it, never moves real funds
+  if (path === '/benchmark/run' && method === 'POST') return send(res, 200, runBenchmark());
 
   // /settings
   if (path === '/settings' && method === 'GET') return send(res, 200, core.getSettings());
