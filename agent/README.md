@@ -86,16 +86,66 @@ Anything a tool returns is EXTERNAL text: it can inform a reply, never order a t
   (`policy/detectInjectionInToolOutput`). That is a second layer, not the main one — the policy
   gate still runs before anything is signed.
 
-## Tests (`parseIntent.test.ts`)
+## The auto-send reader (`mandate.ts`)
 
-The model in the tests is a mock OpenAI-compatible gateway running in its own process: the real
+`parseMandateText()` / `buildMandateDraft()` read an auto-send out of one sentence:
+
+```
+Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC
+  -> Every month on the 1st: 100.00 to Ibu. Keeps at least 20.00 USDC.
+
+auto-send every month: 60 to Ibu, 20 to Adik, 20 to tabungan
+  -> Every month on the 1st: 60.00 to Ibu, 20.00 to Adik, 20.00 to Savings.
+```
+
+It reads recipients and amounts (a split into several is fine), the schedule (`tanggal 15`,
+`every month`, `tiap 2 menit` for the fast demo), and the buffer (`sisakan minimal`, `keep at
+least`, `saldo minimum`). Names are resolved by the caller, so `server/core.ts` keeps its own
+alias table and there is only one of them.
+
+The rule is the same as for a single transfer, and it is the reason this module exists:
+**never invent a number.** A draft card can be confirmed with a PIN, so a made-up amount in a
+draft is made-up money. When the sentence is missing a piece, the answer is a question:
+
+| Sentence | Result |
+|---|---|
+| `set up monthly auto send` | clarify — a recipient and an amount are needed |
+| `tiap bulan kirim 50 USDC ke Budi` | clarify — "I don't have a contact called Budi yet" |
+| `Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC` | draft: 100 to Ibu, keeps 20 |
+
+Two bugs this closed, both found by running the demo script from the plan:
+
+- `Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC` used to be read as a one-off
+  transfer of **1 USDC** — the first number in the sentence is the day, not the amount — so the
+  exact sentence the demo opens with moved money instead of drafting a mandate.
+- The draft card used to be a fixed template (60/20/20, buffer 50) whatever the owner said, so
+  a PIN could turn an invented split into a live auto-send.
+
+`server/core.ts` uses it in one place, the `mandate` branch of `chat()`: the draft is built
+from `intent.text`, and a missing piece becomes a clarify card. Limits, the allowlist, the
+confirmation threshold and the scheduler are still core's, untouched.
+
+`parseIntent()` also validates the branch: a message that only mentions auto-send without
+describing one is not allowed to become a `mandate`, because that branch produces a
+confirmable card. An incomplete request that still asks to move money falls back to `send`,
+so it meets the gate instead of a silent "help" reply.
+
+## Tests (`parseIntent.test.ts`, `mandate.test.ts`)
+
+The model in `parseIntent.test.ts` is a mock OpenAI-compatible gateway running in its own process: the real
 `spawnSync` transport would deadlock against an in-process server. The suite proves that a tool
 call decides the branch, that an invented amount or address is dropped, that a confusable
 address is folded and flagged, that an injection reaches the deny path, that a dead gateway
 falls back to the rules, and that `POST /benchmark/run` still reports `movedFunds: 0` when the
 model obeys the attacker.
 
+`mandate.test.ts` runs the plan's demo sentences through the real `chat()` pipeline: the demo
+sentence drafts 100 to Ibu (not a 1 USDC transfer), the split sentence keeps all three
+recipients, confirming the draft creates exactly that mandate, and an underspecified or
+unknown-name auto-send asks instead of inventing one.
+
 ```bash
 npm test                       # whole repo
 node --test agent/parseIntent.test.ts
+node --test agent/mandate.test.ts
 ```

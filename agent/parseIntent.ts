@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process';
 import { detectInjection, detectInjectionInToolOutput } from '../policy/detectInjection.ts';
 import { normaliseAddress } from '../policy/lookalike.ts';
 import { checkProvenance } from '../policy/provenance.ts';
+import { parseMandateText } from './mandate.ts';
 
 export type IntentKind = 'send' | 'mandate' | 'blocked_report' | 'help';
 
@@ -51,7 +52,11 @@ interface DraftIntent {
 const ADDRESS_TOKEN = /0x[0-9a-zA-Z]{4,40}/g;
 
 const SEND_VERB = /\b(send|kirim|transfer|pay|bayar|move|pindah)\b/i;
-const MANDATE = /\b(auto.?send|every month|monthly|tiap bulan|setiap bulan|mandate|rutin)\b/i;
+// A schedule is how the owner asks for an auto-send: "tiap tanggal 1", "every month",
+// "tiap 2 menit". Without these, the sentence "Tiap tanggal 1 kirim 100 USDC ke Ibu" used to
+// be read as a one-off transfer of 1 USDC, because the first number in it is the day.
+const MANDATE =
+  /\b(auto.?send|autosend|mandate|rutin|terjadwal|scheduled|every month|monthly|per bulan|tiap bulan|setiap bulan|tiap tanggal|setiap tanggal|on the \d|tgl\.?\s*\d|tiap \d+ menit|every \d+ (?:minute|min))\b/i;
 const BLOCKED = /\b(what did you block|blocked|diblokir|serangan|attack)\b/i;
 
 // Softer than policy/detectInjection: catches wallet-specific drains phrased politely.
@@ -383,6 +388,15 @@ function finalise(text: string, draft: DraftIntent, detected: string[]): ParsedI
   // Forwarded content is still an order only in the sense that it must reach the deny path.
   if (checkProvenance(text).blocked && kind !== 'send') kind = 'send';
 
+  // An auto-send is a draft only when the owner actually described one. A sentence that just
+  // mentions auto-send must not produce a draft, because the draft can be confirmed with a
+  // PIN: inventing amounts there would be inventing money. An incomplete request that still
+  // asks to move money stays on the send branch, so it meets the gate instead of a silent
+  // "help" reply.
+  if (kind === 'mandate' && parseMandateText(text).parts.length === 0) {
+    kind = SEND_VERB.test(text) ? 'send' : 'help';
+  }
+
   const nameHint =
     draft.nameHint?.trim().replace(/^["'“”]+|[["'“”]]+$/g, '') || null;
 
@@ -410,7 +424,9 @@ function parseWithRules(text: string, injection: string[]): DraftIntent {
     .match(/(\d+(?:\.\d{1,6})?)/);
   const amount = amountMatch ? Number.parseFloat(amountMatch[1]) : null;
 
-  const nameHint = lower.match(/(?:to|ke|for|buat|kepada)\s+([a-z][a-z'’-]*)/)?.[1] ?? null;
+  // \b on the verb matters: without it "au-to send" reads as "to send" and invents a
+  // contact called "Send".
+  const nameHint = lower.match(/\b(?:to|ke|for|buat|kepada)\s+([a-z][a-z'’-]*)/)?.[1] ?? null;
 
   let kind: IntentKind = 'help';
   if (BLOCKED.test(lower) && !SEND_VERB.test(lower)) kind = 'blocked_report';
