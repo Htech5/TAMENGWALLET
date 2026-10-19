@@ -18,6 +18,11 @@ web-build/
 *.apk
 *.aab
 
+# docs/build holds the PDF build script and the deck source; the generated
+# intermediate HTML files are rebuilt by docs/build/render_pdfs.py
+!docs/build/
+docs/build/Tameng_*.html
+
 # Local data
 data/*.sqlite
 data/*.db
