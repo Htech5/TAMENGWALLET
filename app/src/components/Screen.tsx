@@ -30,14 +30,9 @@ export function Screen({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <ScrollView
-        style={{ flex: 1, backgroundColor: c.bg }}
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={c.ink} /> : undefined}
-      >
-        <View style={[st.band, { paddingTop: insets.top + 16 }]}>
+    <View style={{ flex: 1, backgroundColor: c.band }}>
+      {/* Header stays put; only the white body scrolls underneath its rounded edge. */}
+      <View style={[st.band, { paddingTop: insets.top + 16 }]}>
           {header ?? (
             <View style={st.bandRow}>
               <CircleButton icon="back" label="Back" bg={c.bg} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
@@ -54,8 +49,14 @@ export function Screen({
               {right}
             </View>
           )}
-        </View>
-        <View style={[st.body, { gap: bodyGap, paddingBottom: (footer ? 24 : 40) + insets.bottom }]}>{children}</View>
+      </View>
+      <ScrollView
+        style={st.scroller}
+        contentContainerStyle={[st.body, { gap: bodyGap, paddingBottom: (footer ? 24 : 40) + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={c.ink} /> : undefined}
+      >
+        {children}
       </ScrollView>
       {footer ? <View style={[st.footer, { paddingBottom: 12 + insets.bottom }]}>{footer}</View> : null}
     </View>
@@ -81,7 +82,8 @@ export function Sheet({ children }: { children: ReactNode }) {
 const st = StyleSheet.create({
   band: { backgroundColor: c.band, paddingHorizontal: 20, paddingBottom: 44 },
   bandRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  body: { backgroundColor: c.bg, borderTopLeftRadius: r.xxl, borderTopRightRadius: r.xxl, marginTop: -24, padding: 20, flexGrow: 1 },
+  scroller: { flex: 1, backgroundColor: c.bg, borderTopLeftRadius: r.xxl, borderTopRightRadius: r.xxl, marginTop: -24, overflow: 'hidden' },
+  body: { padding: 20, flexGrow: 1 },
   footer: { paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: c.line, backgroundColor: c.bg },
   sheet: { backgroundColor: c.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 24, paddingTop: 10, maxHeight: '92%' },
   grab: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#D5D5D5', alignSelf: 'center', marginBottom: 14 },

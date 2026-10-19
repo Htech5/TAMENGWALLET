@@ -51,31 +51,31 @@ export default function Home() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg }}>
+    <View style={{ flex: 1, backgroundColor: c.band }}>
+      <View style={[st.band, { paddingTop: insets.top + 16 }]}>
+        <View style={st.bandRow}>
+          <View style={st.profilePill}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => router.push('/profile')} style={st.avatar}>
+              <T style={{ fontFamily: f.medium, fontSize: 22, color: c.white }}>{(w?.owner.name ?? 'R').charAt(0)}</T>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Activity" onPress={() => router.push('/activity')} style={st.activityBtn}>
+              <Icon name="pulse" size={22} />
+              <T v="caption" style={{ color: c.ink2, fontSize: 13 }}>
+                Activity
+              </T>
+            </Pressable>
+          </View>
+          <View style={{ flex: 1 }} />
+          <CircleButton icon="bell" label="Notifications" bg={w && w.unreadEvents > 0 ? c.pink : c.soft} onPress={() => router.push('/notifications')} />
+          <CircleButton icon="sliders" label="Settings" bg={c.soft} onPress={() => router.push('/settings')} />
+        </View>
+      </View>
+
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 + insets.bottom }}
+        style={st.scroller}
+        contentContainerStyle={[st.body, { paddingBottom: 120 + insets.bottom }]}
         refreshControl={<RefreshControl refreshing={home.refreshing} onRefresh={home.refresh} tintColor={c.ink} />}
       >
-        <View style={[st.band, { paddingTop: insets.top + 16 }]}>
-          <View style={st.bandRow}>
-            <View style={st.profilePill}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => router.push('/profile')} style={st.avatar}>
-                <T style={{ fontFamily: f.medium, fontSize: 22, color: c.white }}>{(w?.owner.name ?? 'R').charAt(0)}</T>
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel="Activity" onPress={() => router.push('/activity')} style={st.activityBtn}>
-                <Icon name="pulse" size={22} />
-                <T v="caption" style={{ color: c.ink2, fontSize: 13 }}>
-                  Activity
-                </T>
-              </Pressable>
-            </View>
-            <View style={{ flex: 1 }} />
-            <CircleButton icon="bell" label="Notifications" bg={w && w.unreadEvents > 0 ? c.pink : c.soft} onPress={() => router.push('/notifications')} />
-            <CircleButton icon="sliders" label="Settings" bg={c.soft} onPress={() => router.push('/settings')} />
-          </View>
-        </View>
-
-        <View style={st.body}>
           {!w && !home.error && <Loading />}
           {home.error && !w && <ErrorBox message={home.error} onRetry={home.reload} />}
           {w && (
@@ -116,7 +116,6 @@ export default function Home() {
               </Card>
             </>
           )}
-        </View>
       </ScrollView>
 
       <BottomBar bottom={insets.bottom} />
@@ -300,7 +299,8 @@ const st = StyleSheet.create({
   profilePill: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.soft, borderRadius: r.pill, paddingRight: 16 },
   avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: c.blue, alignItems: 'center', justifyContent: 'center' },
   activityBtn: { alignItems: 'center', paddingLeft: 12, gap: 2 },
-  body: { backgroundColor: c.bg, borderTopLeftRadius: r.xxl, borderTopRightRadius: r.xxl, marginTop: -24, padding: 20, gap: 14, flexGrow: 1 },
+  scroller: { flex: 1, backgroundColor: c.bg, borderTopLeftRadius: r.xxl, borderTopRightRadius: r.xxl, marginTop: -24, overflow: 'hidden' },
+  body: { padding: 20, gap: 14, flexGrow: 1 },
   balance: { borderRadius: r.xxl, padding: 22, gap: 10, overflow: 'hidden', backgroundColor: c.soft },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   saved: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.soft, borderRadius: r.pill, paddingHorizontal: 16, height: 44 },
