@@ -8,6 +8,10 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "server": "node --env-file-if-exists=.env server/index.ts",
     "test": "node --test \"policy/**/*.test.ts\" \"agent/**/*.test.ts\" \"onchain/**/*.test.ts\" \"server/**/*.test.ts\""
+  },
+  "dependencies": {
+    "viem": "^2.57.7"
   }
 }
