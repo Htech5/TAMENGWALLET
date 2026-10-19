@@ -12,9 +12,11 @@ import { fileURLToPath } from 'node:url';
 
 import { parseIntent } from '../agent/parseIntent.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
+import { intentCheck } from '../policy/intentCheck.ts';
 import { findLookalike, type KnownAddress } from '../policy/lookalike.ts';
 import { checkProvenance, type Provenance } from '../policy/provenance.ts';
 import type { PolicyConfig, PolicyResult, TxIntent } from '../policy/types.ts';
+import { decodeTx } from '../onchain/decodeTx.ts';
 import * as chain from '../onchain/sendUsdc.ts';
 import type {
   ActivityEvent,
@@ -238,6 +240,17 @@ function executeTransfer(contact: Contact, amount: number, source: 'chat' | 'man
     save();
     throw new ApiError('VALIDATION_ERROR', reasons[0].message, 400);
   }
+  // FR-16: decode what will actually be signed and refuse any gap with what was promised.
+  const calldata = chain.buildCalldata(contact.address, amount);
+  const match = intentCheck(decodeTx(calldata), { action: 'transfer', to: contact.address, amount });
+  if (!match.ok) {
+    const reasons: Reason[] = match.mismatches.map((m) => ({ code: 'INTENT_MISMATCH', message: m }));
+    logBlocked('Transaction did not match what you confirmed', reasons, fmt(amount));
+    audit('intent_mismatch', { to: contact.id, amount: fmt(amount), mismatches: match.mismatches });
+    save();
+    throw new ApiError('VALIDATION_ERROR', reasons[0].message, 400);
+  }
+
   const tx = chain.transfer(contact.address, amount);
   const saved = amount * BENCHMARK_PCT - n(NETWORK_FEE_USD);
   logEvent({

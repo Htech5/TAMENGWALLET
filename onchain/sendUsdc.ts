@@ -8,12 +8,22 @@
 import { randomBytes } from 'node:crypto';
 
 import type { TxRef } from '../app/src/lib/types.ts';
+import { encodeTransfer } from './decodeTx.ts';
 
 const EXPLORER = 'https://sepolia.basescan.org/tx/';
 const CONFIRM_MS = 4000;
 
 export const chainId = process.env.CHAIN_ID ?? 'base-sepolia';
 export const live = Boolean(process.env.AGENT_WALLET_PRIVATE_KEY && process.env.RPC_URL);
+
+/**
+ * The exact calldata that would be signed. Policy decodes this and compares it with what
+ * the owner confirmed (FR-16), so the check runs on the real bytes rather than on a
+ * promise about them, both now and once a real signer replaces transfer().
+ */
+export function buildCalldata(to: string, amountUsdc: number): string {
+  return encodeTransfer(to, amountUsdc);
+}
 
 export function transfer(_to: string, _amountUsdc: number): TxRef {
   const hash = `0x${randomBytes(32).toString('hex')}`;
