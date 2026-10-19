@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import { ReactNode } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useKeyboardOpen } from '@/lib/hooks';
 import { c, r } from '@/theme';
 import { CircleButton, T } from './ui';
 
@@ -29,8 +30,9 @@ export function Screen({
   bodyGap?: number;
 }) {
   const insets = useSafeAreaInsets();
+  const kbOpen = useKeyboardOpen();
   return (
-    <View style={{ flex: 1, backgroundColor: c.band }}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.band }} behavior="padding">
       {/* Header stays put; only the white body scrolls underneath its rounded edge. */}
       <View style={[st.band, { paddingTop: insets.top + 16 }]}>
           {header ?? (
@@ -58,8 +60,8 @@ export function Screen({
       >
         {children}
       </ScrollView>
-      {footer ? <View style={[st.footer, { paddingBottom: 12 + insets.bottom }]}>{footer}</View> : null}
-    </View>
+      {footer ? <View style={[st.footer, { paddingBottom: 12 + (kbOpen ? 0 : insets.bottom) }]}>{footer}</View> : null}
+    </KeyboardAvoidingView>
   );
 }
 
