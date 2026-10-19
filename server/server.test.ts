@@ -172,7 +172,7 @@ test('the scheduler runs a due auto-send and books the next one', async () => {
   m.nextRunAt = new Date(Date.now() - 1000).toISOString();
   const before = Number(state.wallet.balance);
   const { runDueMandates } = await import('./core.ts');
-  const ran = runDueMandates();
+  const ran = await runDueMandates();
   assert.deepEqual(ran, ['md-1']);
   assert.equal(state.wallet.balance, (before - Number(m.total)).toFixed(2));
   assert.equal(m.lastRun?.status, 'sent');
@@ -185,10 +185,53 @@ test('an auto-send that would break the buffer is postponed, not sent', async ()
   m.nextRunAt = new Date(Date.now() - 1000).toISOString();
   state.wallet.balance = '60.00'; // 100.00 total against a 50.00 floor
   const { runDueMandates } = await import('./core.ts');
-  runDueMandates();
+  await runDueMandates();
   assert.equal(state.wallet.balance, '60.00');
   assert.equal(m.status, 'postponed');
   assert.equal(state.activity[0].type, 'run_postponed');
+});
+
+test('the same mandate run is never broadcast twice', async () => {
+  const m = state.mandates.find((x) => x.id === 'md-1');
+  assert.ok(m);
+  const scheduledAt = new Date(Date.now() - 1000).toISOString();
+  m.nextRunAt = scheduledAt;
+  const { runDueMandates } = await import('./core.ts');
+
+  const before = Number(state.wallet.balance);
+  await runDueMandates();
+  const after = Number(state.wallet.balance);
+  assert.equal(after, Number((before - Number(m.total)).toFixed(2)));
+  assert.equal(m.lastRun?.status, 'sent');
+
+  // Simulate a crash that left the pointer on the same slot: the run record already
+  // exists and must stop a second broadcast.
+  m.nextRunAt = scheduledAt;
+  m.status = 'active';
+  await runDueMandates();
+  assert.equal(Number(state.wallet.balance), after);
+  assert.equal(state.mandateRuns['run-' + m.id + '-' + Date.parse(scheduledAt)].status, 'sent');
+});
+
+test('three postponed runs auto-pause the mandate', async () => {
+  const m = state.mandates.find((x) => x.id === 'md-1');
+  assert.ok(m);
+  state.wallet.balance = '60.00'; // 100.00 total against a 50.00 floor
+  m.status = 'active';
+  m.consecutivePostpones = 0;
+  const { runDueMandates } = await import('./core.ts');
+
+  for (let i = 0; i < 3; i += 1) {
+    // Distinct slots: the run id is deterministic, and two runs must not share one.
+    m.nextRunAt = new Date(Date.now() - 1000 * (i + 1)).toISOString();
+    await runDueMandates();
+  }
+
+  assert.equal(state.wallet.balance, '60.00');
+  assert.equal(m.consecutivePostpones, 3);
+  assert.equal(m.status, 'paused');
+  assert.equal(m.nextRunAt, null);
+  assert.equal(state.activity[0].type, 'mandate_paused');
 });
 
 test('activity paging and read markers', async () => {

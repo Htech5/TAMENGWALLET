@@ -37,7 +37,9 @@ import type {
   TxRef,
   Wallet,
 } from '../app/src/lib/types.ts';
+import { appendEvidence } from './evidence.ts';
 import { audit, nextId, save, state } from './store.ts';
+import type { MandateRun } from './store.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DRAFT_TEMPLATE = JSON.parse(readFileSync(join(ROOT, 'app', 'mocks', 'chat-mandate-draft.json'), 'utf8'));
@@ -50,11 +52,12 @@ const INTENT_TTL_MS = 10 * 60 * 1000;
 const NETWORK_FEE_USD = '0.0021';
 const BENCHMARK_PCT = 0.0513; // what a remittance corridor charges, used for "fees saved"
 
+const SAVINGS_ADDRESS = process.env.SAVINGS_WALLET_ADDRESS?.trim() || '0x9C2ebEB50975FE0fe475Ed4Fee4c8E6761110fb5';
 const SAVINGS: Contact = {
   id: 'savings',
   name: 'Savings',
-  address: '0x286d4c1aa2f0b7e9c3d5e8f1a6b2c7d9e0f3b329',
-  addressShort: '0x286d…b329',
+  address: SAVINGS_ADDRESS,
+  addressShort: SAVINGS_ADDRESS.slice(0, 6) + '…' + SAVINGS_ADDRESS.slice(-4),
   verifiedAt: '2026-10-01T03:00:00Z',
 };
 
@@ -83,6 +86,20 @@ function sha256(v: string): string {
 
 const n = (v: string) => Number.parseFloat(v);
 const fmt = (v: number) => v.toFixed(2);
+
+/** Money input is a positive decimal string; never let NaN reach the signer. */
+function amountInput(value: string | undefined, label: string): number {
+  const parsed = n(String(value ?? ''));
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new ApiError('VALIDATION_ERROR', label + ' must be more than 0.', 400);
+  if (parsed > 1_000_000) throw new ApiError('VALIDATION_ERROR', label + ' is too large.', 400);
+  return parsed;
+}
+
+function balanceInput(value: string | undefined): number {
+  const parsed = n(String(value ?? '0'));
+  if (!Number.isFinite(parsed) || parsed < 0) throw new ApiError('VALIDATION_ERROR', 'Minimum balance must be 0 or more.', 400);
+  return parsed;
+}
 const short = (a: string) => a.slice(0, 6) + '…' + a.slice(-4);
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -223,15 +240,78 @@ function logBlocked(title: string, reasons: Reason[], amount?: string, excerpt?:
   audit('blocked', { title, reasons: reasons.map((r) => r.code), amount });
 }
 
-function settlePending(): void {
+function isTxRef(value: unknown): value is TxRef {
+  if (!value || typeof value !== 'object') return false;
+  const tx = value as Partial<TxRef>;
+  return (
+    typeof tx.hash === 'string' &&
+    tx.hash.startsWith('0x') &&
+    typeof tx.explorerUrl === 'string' &&
+    (tx.status === 'pending' || tx.status === 'confirmed' || tx.status === 'failed' || tx.status === 'unknown')
+  );
+}
+
+/** In live mode the source of truth is the chain, not the seed balance in app/mocks. */
+async function refreshBalances(): Promise<void> {
+  if (chain.simulated()) return;
+  if (chain.agentAddress) {
+    state.wallet.address = chain.agentAddress;
+    state.wallet.addressShort = short(chain.agentAddress);
+  }
+  const [agent, savings] = await Promise.all([
+    chain.getUsdcBalance(state.wallet.address),
+    chain.getUsdcBalance(SAVINGS.address),
+  ]);
+  if (agent !== null) state.wallet.balance = fmt(agent);
+  if (savings !== null) state.wallet.savings.balance = fmt(savings);
+  save();
+}
+
+async function settlePending(): Promise<void> {
   const now = Date.now();
   for (const e of state.activity) {
-    if (e.tx && e.tx.status === 'pending' && now - Date.parse(e.at) > 4000) e.tx.status = 'confirmed';
+    if (!e.tx || e.tx.status !== 'pending') continue;
+    if (chain.simulated()) {
+      if (now - Date.parse(e.at) > 4000) e.tx.status = 'confirmed';
+      continue;
+    }
+    e.tx.status = await chain.receiptStatus(e.tx.hash);
   }
+  for (const m of state.mandates) {
+    if (!m.lastRun) continue;
+    for (const tx of m.lastRun.txs) {
+      if (tx.status !== 'pending') continue;
+      if (chain.simulated()) {
+        if (now - Date.parse(m.lastRun.at) > 4000) tx.status = 'confirmed';
+        continue;
+      }
+      tx.status = await chain.receiptStatus(tx.hash);
+    }
+  }
+  save();
+}
+
+interface TransferContext {
+  /** Persisted key so a replayed mandate run never broadcasts the same transfer twice. */
+  idempotencyKey?: string;
+  runId?: string;
+  /** Human-readable line for docs/EXECUTION_EVIDENCE.md. */
+  scenario?: string;
 }
 
 /** The only path that moves money. Re-runs the gate, so no caller can skip it. */
-function executeTransfer(contact: Contact, amount: number, source: 'chat' | 'mandate'): TxRef {
+async function executeTransfer(
+  contact: Contact,
+  amount: number,
+  source: 'chat' | 'mandate',
+  ctx: TransferContext = {},
+): Promise<TxRef> {
+  // A replay of a run that already broadcast this recipient is not a new transfer.
+  if (ctx.idempotencyKey) {
+    const prior = state.idempotency[ctx.idempotencyKey];
+    if (isTxRef(prior)) return clone(prior);
+  }
+
   const verdict = gate(contact.address, amount, 'pre-sign');
   if (verdict.decision === 'deny') {
     const reasons = verdict.reasons.map((r) => toReason(r, amount, contact.addressShort));
@@ -250,7 +330,28 @@ function executeTransfer(contact: Contact, amount: number, source: 'chat' | 'man
     throw new ApiError('VALIDATION_ERROR', reasons[0].message, 400);
   }
 
-  const tx = chain.transfer(contact.address, amount);
+  let tx: TxRef;
+  try {
+    tx = await chain.transfer(contact.address, amount);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Base Sepolia did not accept the transaction.';
+    logEvent({
+      type: 'transfer_failed',
+      read: false,
+      title: 'Could not send ' + fmt(amount) + ' USDC to ' + contact.name,
+      amount: fmt(amount),
+      recipient: toRecipient(contact),
+      source,
+    });
+    audit('transfer_failed', { to: contact.id, amount: fmt(amount), source, error: message });
+    save();
+    throw new ApiError('NETWORK_ERROR', message, 502);
+  }
+
+  // Persist the hash before touching the balance: if the process dies now, a replay
+  // of the same mandate run finds this hash and does not send a second transfer.
+  if (ctx.idempotencyKey) state.idempotency[ctx.idempotencyKey] = tx;
+
   const saved = amount * BENCHMARK_PCT - n(NETWORK_FEE_USD);
   logEvent({
     type: 'transfer_sent',
@@ -267,7 +368,28 @@ function executeTransfer(contact: Contact, amount: number, source: 'chat' | 'man
   if (contact.id === 'savings') state.wallet.savings.balance = fmt(n(state.wallet.savings.balance) + amount);
   state.wallet.feesSaved.totalUsd = fmt(n(state.wallet.feesSaved.totalUsd) + saved);
   state.wallet.protection.checked += 1;
-  audit('transfer', { to: contact.id, amount: fmt(amount), hash: tx.hash, source, simulated: !chain.live });
+  audit('transfer', {
+    to: contact.id,
+    amount: fmt(amount),
+    hash: tx.hash,
+    source,
+    runId: ctx.runId,
+    simulated: chain.simulated(),
+  });
+
+  // TMG-19: only real broadcasts reach the evidence file; the benchmark and the simulator never do.
+  if (chain.live && !chain.simulated() && chain.agentAddress) {
+    appendEvidence({
+      at: new Date().toISOString(),
+      scenario: ctx.scenario ?? source + ' transfer to ' + contact.name,
+      decision: 'allow',
+      amount: fmt(amount),
+      hash: tx.hash,
+      explorerUrl: tx.explorerUrl,
+      agentAddress: chain.agentAddress,
+    });
+  }
+
   save();
   return tx;
 }
@@ -278,8 +400,9 @@ function toRecipient(c: Contact): Recipient {
 
 // --- endpoints -----------------------------------------------------------------
 
-export function getWallet(): Wallet {
-  settlePending();
+export async function getWallet(): Promise<Wallet> {
+  await refreshBalances();
+  await settlePending();
   const w = state.wallet;
   const upcoming = state.mandates
     .filter((m) => m.status !== 'paused' && m.nextRunAt)
@@ -303,7 +426,8 @@ export function getWallet(): Wallet {
   return clone(w);
 }
 
-export function chat(message: string, declared: Provenance = 'USER'): ChatResponse {
+export async function chat(message: string, declared: Provenance = 'USER'): Promise<ChatResponse> {
+  await refreshBalances();
   const messageId = nextId('m');
   const intent = parseIntent(message ?? '');
   const s = state.settings;
@@ -470,7 +594,7 @@ export function chat(message: string, declared: Provenance = 'USER'): ChatRespon
     };
   }
 
-  const tx = executeTransfer(target, amount, 'chat');
+  const tx = await executeTransfer(target, amount, 'chat');
   return {
     messageId,
     reply: 'Done. ' + fmt(amount) + ' USDC is on its way to ' + target.name + '.',
@@ -492,7 +616,7 @@ export function chat(message: string, declared: Provenance = 'USER'): ChatRespon
   };
 }
 
-export function confirm(intentId: string, approve: boolean, pin?: string): ConfirmResponse {
+export async function confirm(intentId: string, approve: boolean, pin?: string): Promise<ConfirmResponse> {
   const intent = state.intents[intentId];
   if (!intent) throw new ApiError('NOT_FOUND', 'This request is no longer available.', 404);
 
@@ -530,12 +654,12 @@ export function confirm(intentId: string, approve: boolean, pin?: string): Confi
     return { intentId, status: 'denied', tx: null, mandate: null, reasons };
   }
 
-  const tx = executeTransfer(contact, amount, 'chat');
+  const tx = await executeTransfer(contact, amount, 'chat');
   return { intentId, status: 'executed', tx: clone(tx), mandate: null };
 }
 
-export function getActivity(cursor?: string, limit = 50): ActivityPage {
-  settlePending();
+export async function getActivity(cursor?: string, limit = 50): Promise<ActivityPage> {
+  await settlePending();
   const start = cursor ? state.activity.findIndex((e) => e.id === cursor) + 1 : 0;
   const items = state.activity.slice(start, start + limit);
   const more = start + limit < state.activity.length;
@@ -580,7 +704,7 @@ export function createMandate(input: MandateInput): Mandate {
   const recipients = input.recipients.map((r) => {
     const c = allContacts().find((x) => x.id === r.contactId);
     if (!c) throw new ApiError('NOT_FOUND', 'One of those contacts no longer exists.', 404);
-    return { ...toRecipient(c), amount: fmt(n(r.amount)) };
+    return { ...toRecipient(c), amount: fmt(amountInput(r.amount, c.name + "'s amount")) };
   });
 
   const mandate: Mandate = {
@@ -589,7 +713,7 @@ export function createMandate(input: MandateInput): Mandate {
     recipients,
     total: fmt(recipients.reduce((sum, r) => sum + n(r.amount), 0)),
     schedule: input.schedule ?? { type: 'monthly', dayOfMonth: 1 },
-    minBalance: fmt(n(input.minBalance ?? '0')),
+    minBalance: fmt(balanceInput(input.minBalance)),
     status: 'active',
     nextRunAt: null,
     lastRun: null,
@@ -609,13 +733,13 @@ export function patchMandate(id: string, body: Partial<MandateInput> & { status?
     m.recipients = body.recipients.map((r) => {
       const c = allContacts().find((x) => x.id === r.contactId);
       if (!c) throw new ApiError('NOT_FOUND', 'One of those contacts no longer exists.', 404);
-      return { ...toRecipient(c), amount: fmt(n(r.amount)) };
+      return { ...toRecipient(c), amount: fmt(amountInput(r.amount, c.name + "'s amount")) };
     });
     m.total = fmt(m.recipients.reduce((sum, r) => sum + n(r.amount), 0));
   }
   if (body.label !== undefined) m.label = body.label.trim() || m.label;
   if (body.schedule) m.schedule = body.schedule;
-  if (body.minBalance !== undefined) m.minBalance = fmt(n(body.minBalance));
+  if (body.minBalance !== undefined) m.minBalance = fmt(balanceInput(body.minBalance));
 
   if (body.status) {
     m.status = body.status;
@@ -723,23 +847,70 @@ export function patchSettings(body: Partial<Settings>): Settings {
 
 // --- scheduler (TMG-49) ---------------------------------------------------------
 
+const runningMandates = new Set<string>();
+
 /** Runs every mandate whose time has come. Safe to call as often as you like. */
-export function runDueMandates(now = Date.now()): string[] {
+export async function runDueMandates(now = Date.now()): Promise<string[]> {
+  await refreshBalances();
   const ran: string[] = [];
   for (const m of state.mandates) {
-    if (m.status !== 'active' || !m.nextRunAt) continue;
-    if (Date.parse(m.nextRunAt) > now) continue;
-    runMandate(m);
-    ran.push(m.id);
+    // A postponed mandate keeps its slot: it retries at nextRunAt and auto-pauses after 3.
+    if (m.status !== 'active' && m.status !== 'postponed') continue;
+    if (!m.nextRunAt || Date.parse(m.nextRunAt) > now) continue;
+    if (runningMandates.has(m.id)) continue;
+    runningMandates.add(m.id);
+    try {
+      if (await runMandate(m)) ran.push(m.id);
+    } finally {
+      runningMandates.delete(m.id);
+    }
   }
   return ran;
 }
 
-function runMandate(m: Mandate): void {
+async function runMandate(m: Mandate): Promise<boolean> {
   const at = new Date().toISOString();
-  const runId = 'run-' + m.id + '-' + at.slice(0, 10).replace(/-/g, '');
+  const scheduledAt = m.nextRunAt;
+  if (!scheduledAt) return false;
 
-  if (n(state.wallet.balance) - n(m.total) < n(m.minBalance)) {
+  // Deterministic id: a crash/restart on the same slot resumes the same run instead of
+  // treating it as a new one. This is the per-run idempotency key from NFR-06.
+  const runId = 'run-' + m.id + '-' + Date.parse(scheduledAt);
+  let run: MandateRun | undefined = state.mandateRuns[runId];
+
+  if (run && run.status !== 'pending') {
+    // The run already reached a terminal state. Only repair a pointer left behind by a
+    // crash; never broadcast its transfers again.
+    if (m.nextRunAt === scheduledAt) {
+      if (run.status === 'postponed' && m.consecutivePostpones >= 3) {
+        m.status = 'paused';
+        m.nextRunAt = null;
+      } else {
+        m.nextRunAt = nextRunFor(m);
+      }
+      save();
+    }
+    return false;
+  }
+
+  if (!run) {
+    run = {
+      id: runId,
+      mandateId: m.id,
+      scheduledAt,
+      startedAt: at,
+      updatedAt: at,
+      status: 'pending',
+      txs: [],
+      transfers: {},
+    };
+    state.mandateRuns[runId] = run;
+    save();
+  }
+
+  if (run.txs.length === 0 && n(state.wallet.balance) - n(m.total) < n(m.minBalance)) {
+    run.status = 'postponed';
+    run.updatedAt = at;
     m.consecutivePostpones += 1;
     m.status = 'postponed';
     m.nextRunAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
@@ -757,30 +928,70 @@ function runMandate(m: Mandate): void {
         },
       ],
     });
-    audit('mandate_postponed', { mandateId: m.id, total: m.total });
+
+    if (m.consecutivePostpones >= 3) {
+      m.status = 'paused';
+      m.nextRunAt = null;
+      logEvent({
+        type: 'mandate_paused',
+        read: false,
+        title: m.label + ' paused after 3 postponed runs',
+        mandateId: m.id,
+        reasons: [
+          {
+            code: 'BELOW_MIN_BALANCE',
+            message: 'The balance stayed below the ' + m.minBalance + ' USDC buffer for 3 runs in a row.',
+          },
+        ],
+      });
+      audit('mandate_auto_paused', { mandateId: m.id, consecutivePostpones: m.consecutivePostpones });
+    }
+
+    audit('mandate_postponed', { mandateId: m.id, total: m.total, runId });
     save();
-    return;
+    return true;
   }
 
   const txs: TxRef[] = [];
   let failed = false;
-  for (const r of m.recipients) {
+  for (const [index, r] of m.recipients.entries()) {
+    const key = 'mandate:' + runId + ':' + index;
+    const cached = run.transfers[key];
+    if (cached) {
+      txs.push(cached);
+      continue;
+    }
+
     const contact = allContacts().find((c) => c.id === r.contactId);
     if (!contact) {
       failed = true;
       continue;
     }
     try {
-      txs.push(executeTransfer(contact, n(r.amount), 'mandate'));
+      const tx = await executeTransfer(contact, n(r.amount), 'mandate', {
+        idempotencyKey: key,
+        runId,
+        scenario: m.label + ' — ' + contact.name,
+      });
+      run.transfers[key] = tx;
+      run.txs = txs.concat(tx);
+      run.updatedAt = new Date().toISOString();
+      txs.push(tx);
+      save();
     } catch {
       failed = true; // executeTransfer already logged the blocked attempt
     }
   }
 
+  const status = failed ? 'failed' : txs.length > 0 ? 'sent' : 'failed';
   m.status = 'active';
   m.consecutivePostpones = 0;
-  m.lastRun = { id: runId, at, status: failed ? 'failed' : 'sent', txs };
+  m.lastRun = { id: runId, at, status, txs };
   m.nextRunAt = nextRunFor(m);
-  audit('mandate_run', { mandateId: m.id, sent: txs.length, failed });
+  run.status = status;
+  run.txs = txs;
+  run.updatedAt = new Date().toISOString();
+  audit('mandate_run', { mandateId: m.id, runId, sent: txs.length, failed });
   save();
+  return true;
 }

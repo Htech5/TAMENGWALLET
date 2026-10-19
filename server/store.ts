@@ -13,6 +13,7 @@ import type {
   Mandate,
   MandateDraftCard,
   Settings,
+  TxRef,
   Wallet,
 } from '../app/src/lib/types.ts';
 
@@ -22,6 +23,19 @@ const FILE = join(DATA, 'state.json');
 const AUDIT = join(DATA, 'audit.log');
 const MOCKS = join(ROOT, 'app', 'mocks');
 
+export interface MandateRun {
+  id: string;
+  mandateId: string;
+  scheduledAt: string;
+  startedAt: string;
+  updatedAt: string;
+  status: 'pending' | 'sent' | 'postponed' | 'failed' | 'unknown';
+  /** Every on-chain transfer this run produced, in recipient order. */
+  txs: TxRef[];
+  /** Per-recipient idempotency cache, keyed by mandate:runId:index. */
+  transfers: Record<string, TxRef>;
+}
+
 export interface State {
   wallet: Wallet;
   activity: ActivityEvent[];
@@ -30,6 +44,8 @@ export interface State {
   settings: Settings;
   intents: Record<string, DecisionCard | MandateDraftCard>;
   idempotency: Record<string, unknown>;
+  /** One record per scheduled mandate run; the run id is its idempotency key. */
+  mandateRuns: Record<string, MandateRun>;
   pin: { fails: number; lockedUntil: number };
   seq: number;
 }
@@ -45,6 +61,7 @@ function seed(): State {
     settings: mock('settings.json'),
     intents: {},
     idempotency: {},
+    mandateRuns: {},
     pin: { fails: 0, lockedUntil: 0 },
     seq: 200,
   };
