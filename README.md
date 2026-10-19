@@ -45,6 +45,29 @@ Project board: **tameng.atlassian.net**, project `TMG`. Each folder's README lis
 | 20 Oct, 12:00 | Team target: submission email sent (TMG-45) |
 | 20 Oct, 22:59 | Official deadline (23:59 Beijing time) |
 
+## Run it in three commands
+
+```bash
+cp .env.example .env            # simulated mode by default: no key, no chain
+npm install && (cd app && npm install)
+npm run server                  # http://localhost:3000 — prints the URL for the phone
+npm test                        # 65 tests: policy 13, security 29, onchain 2, server 21
+```
+
+Then, in a second shell: `cd app && npx expo start` (phone via Expo Go) or `npx expo start --web` (browser). The app falls back to `app/mocks/` when it has no backend, so the UI always runs. Full instructions, live-mode config, public deploy and troubleshooting: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+## Submission materials
+
+| Item | File |
+|---|---|
+| Technical documentation | [`docs/submission/Tameng_1_TechnicalDoc.pdf`](docs/submission/Tameng_1_TechnicalDoc.pdf) (source: [`docs/TECHNICAL_DOC.md`](docs/TECHNICAL_DOC.md)) |
+| Presentation deck (12 slides, ≤ 10 min) | [`docs/submission/Tameng_2_Deck.pdf`](docs/submission/Tameng_2_Deck.pdf) |
+| Security self-assessment | [`docs/submission/Tameng_3_SecurityReport.pdf`](docs/submission/Tameng_3_SecurityReport.pdf) (source: [`docs/SECURITY_REPORT.md`](docs/SECURITY_REPORT.md)) |
+| Execution evidence (11 live tx hashes) | [`docs/submission/Tameng_4_ExecutionEvidence.pdf`](docs/submission/Tameng_4_ExecutionEvidence.pdf) (source: [`docs/EXECUTION_EVIDENCE.md`](docs/EXECUTION_EVIDENCE.md)) |
+| Deployment guide | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) |
+
+The PDFs are generated from the Markdown sources with `python3 docs/build/render_pdfs.py` (headless Chrome; no other tooling needed).
+
 ## Repository layout
 
 ```
@@ -80,6 +103,8 @@ npm test
 
 - [`PRD.md`](PRD.md) — scope, roles, security pipeline, acceptance criteria
 - [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) — app ↔ server contract
+- [`docs/TECHNICAL_DOC.md`](docs/TECHNICAL_DOC.md) — architecture, algorithms, security design
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — run, deploy and reproduce the evidence
 - [`app/mocks/`](app/mocks/) — example responses for every endpoint
 
 ## Security rules for the team
