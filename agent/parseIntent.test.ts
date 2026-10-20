@@ -50,7 +50,7 @@ function obey(text) {
 const server = createServer((req, res) => {
   // The hit counter, so a test can ask the gateway itself whether it was contacted.
   if (req.url === '/hits') {
-    res.writeHead(200, { 'content-type': 'application/json' });
+    res.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
     res.end(JSON.stringify({ hits }));
     return;
   }
@@ -83,7 +83,11 @@ const server = createServer((req, res) => {
       }
     }
     const reply = () => {
-      res.writeHead(200, { 'content-type': 'application/json' });
+      // connection: close, so this gateway never leaves a pooled socket behind. The tests
+      // stop their gateway when they are done, and a pooled socket to a stopped process
+      // makes the next request fail with ECONNRESET — in a test that has nothing to do
+      // with the gateway. A test server that is thrown away should not keep anything.
+      res.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
       res.end(JSON.stringify({
         id: 'mock',
         choices: [{
@@ -116,7 +120,7 @@ interface Gateway {
 
 /** The gateway's own count of the requests it has received. */
 async function gatewayHits(port: number): Promise<number> {
-  const res = await fetch('http://127.0.0.1:' + port + '/hits');
+  const res = await fetchGateway('http://127.0.0.1:' + port + '/hits');
   return ((await res.json()) as { hits: number }).hits;
 }
 
@@ -180,13 +184,30 @@ function startGateway(mode: 'fixed' | 'obedient' | 'flaky', tool = 'request_tran
   });
 }
 
+/**
+ * A fetch to the mock gateway, retrying once on a dead pooled socket.
+ *
+ * Node's fetch pools connections. When a gateway is stopped, the socket in the pool is
+ * dead, and the next request to that address fails with ECONNRESET before it is even
+ * sent. That is a retryable transport failure, not a result, so it is retried once.
+ */
+async function fetchGateway(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (failure) {
+    const code = (failure as { cause?: { code?: string } })?.cause?.code;
+    if (code !== 'ECONNRESET' && code !== 'ECONNREFUSED') throw failure;
+    return await fetch(url, init);
+  }
+}
+
 /** Polls the gateway until it actually answers, so a test never races the process start. */
 async function ready(port: number): Promise<void> {
   const deadline = Date.now() + 15000;
   let last = '';
   while (Date.now() < deadline) {
     try {
-      const res = await fetch('http://127.0.0.1:' + port + '/v1/chat/completions', { method: 'POST', body: '{}' });
+      const res = await fetchGateway('http://127.0.0.1:' + port + '/v1/chat/completions', { method: 'POST', body: '{}' });
       if (res.ok) return;
       last = 'HTTP ' + res.status;
     } catch (failure) {
