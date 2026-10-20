@@ -25,9 +25,10 @@
 // benchmark paid that cost 54 times. The model was never the slow part; running it on
 // sentences a regex already reads correctly was.
 //
-// parseIntent stays synchronous because server/core.ts calls it from synchronous handlers.
-// The LLM round trip therefore runs in a short-lived child process (spawnSync). That costs a
-// process start per LLM turn, but keeps the exported shape and the whole server untouched.
+// The model round trip is a plain fetch, so it does not hold the event loop: while the
+// gateway is thinking, the mandate scheduler, /wallet and every other request keep
+// working. It used to run in a short-lived child process (spawnSync), which blocked the
+// whole server for the length of the call — up to 32.5 s with the old timeout.
 //
 // Environment:
 //   LLM_API_KEY    enables the model (OPENAI_API_KEY is accepted as an alias)
@@ -35,8 +36,6 @@
 //   LLM_BASE_URL   default https://api.openai.com/v1 (any OpenAI-compatible gateway)
 //   LLM_TIMEOUT_MS default 2500 — a budget that covers the gateway's p95
 //   LLM_DISABLED=1 always use the rule reader
-
-import { spawnSync } from 'node:child_process';
 
 import { detectInjection, detectInjectionInToolOutput } from '../policy/detectInjection.ts';
 import { normaliseAddress } from '../policy/lookalike.ts';
@@ -196,27 +195,6 @@ const TOOL_KIND: Record<string, IntentKind> = {
   help: 'help',
 };
 
-// The child only performs the HTTP round trip. The API key travels on stdin, not on the
-// command line, so it cannot be read out of the process list.
-const LLM_TRANSPORT = `
-let raw = '';
-for await (const chunk of process.stdin) raw += chunk;
-let out;
-try {
-  const req = JSON.parse(raw);
-  const res = await fetch(req.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + req.apiKey },
-    body: JSON.stringify(req.body),
-    signal: AbortSignal.timeout(req.timeoutMs),
-  });
-  out = { status: res.status, body: await res.text() };
-} catch (err) {
-  out = { status: 0, error: err && err.message ? err.message : String(err) };
-}
-process.stdout.write(JSON.stringify(out));
-`;
-
 let llmFailures = 0;
 let llmRetryAt = 0;
 let llmWarned = false;
@@ -261,32 +239,21 @@ function asArguments(value: unknown): Record<string, unknown> {
   return {};
 }
 
-function requestToolCall(
+async function requestToolCall(
   config: LlmConfig,
   body: unknown,
-): { name: string; args: Record<string, unknown> } | null {
-  const payload = { url: config.url, apiKey: config.apiKey, timeoutMs: config.timeoutMs, body };
-  const child = spawnSync(process.execPath, ['--input-type=module', '-e', LLM_TRANSPORT], {
-    input: JSON.stringify(payload),
-    encoding: 'utf8',
-    timeout: config.timeoutMs + 2500,
-    maxBuffer: 8 * 1024 * 1024,
-    windowsHide: true,
+): Promise<{ name: string; args: Record<string, unknown> } | null> {
+  const res = await fetch(config.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + config.apiKey },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(config.timeoutMs),
   });
 
-  if (child.error) throw child.error;
-  if (child.status !== 0) {
-    const stderr = (child.stderr || '').trim().slice(0, 300);
-    throw new Error('LLM transport exited with ' + child.status + (stderr ? ': ' + stderr : ''));
-  }
+  const text = await res.text();
+  if (!res.ok) throw new Error('LLM HTTP ' + res.status + ': ' + text.slice(0, 300));
 
-  const envelope = JSON.parse(child.stdout || '{}') as { status?: number; body?: string; error?: string };
-  if (envelope.error) throw new Error(envelope.error);
-  if (!envelope.status || envelope.status < 200 || envelope.status >= 300) {
-    throw new Error('LLM HTTP ' + envelope.status + ': ' + (envelope.body || '').slice(0, 300));
-  }
-
-  const parsed = JSON.parse(envelope.body || '{}') as {
+  const parsed = JSON.parse(text || '{}') as {
     choices?: {
       message?: {
         tool_calls?: { function?: { name?: unknown; arguments?: unknown } }[];
@@ -316,7 +283,7 @@ function toAmount(value: unknown): number | null {
   return null;
 }
 
-function parseWithLlm(text: string): DraftIntent | null {
+async function parseWithLlm(text: string): Promise<DraftIntent | null> {
   const config = llmConfig();
   if (!config) return null;
 
@@ -330,7 +297,7 @@ function parseWithLlm(text: string): DraftIntent | null {
     tool_choice: 'auto',
   };
 
-  const call = requestToolCall(config, body);
+  const call = await requestToolCall(config, body);
   if (!call) return null;
   const kind = TOOL_KIND[call.name];
   if (!kind) return null;
@@ -489,15 +456,18 @@ function parseWithRules(text: string, injection: string[]): { draft: DraftIntent
 
 export type IntentReader = 'llm' | 'rules' | 'cache';
 
-let lastReader: IntentReader = 'rules';
-
-/**
- * Which reader answered the most recent call. For logs, the demo and the tests — never for
- * policy. Before this existed, a silent fallback was indistinguishable from a model answer,
- * so "the model is running" was something we claimed rather than something we could show.
- */
-export function getLastReader(): IntentReader {
-  return lastReader;
+export interface ReadIntent {
+  intent: ParsedIntent;
+  /**
+   * Which reader answered this call. For logs, the demo and the tests — never for policy.
+   * Before this existed, a silent fallback was indistinguishable from a model answer, so
+   * "the model is running" was something we claimed rather than something we could show.
+   *
+   * It travels with the answer instead of living in a module variable: the server handles
+   * chats concurrently, and a shared "last reader" would name whichever call finished last
+   * rather than the one being asked about.
+   */
+  reader: IntentReader;
 }
 
 // Same sentence, same answer, no second round trip. The key carries the gateway fingerprint,
@@ -510,25 +480,23 @@ function cacheKey(text: string): string {
   return text + '\u0000' + (config ? config.url + '|' + config.model : 'rules-only');
 }
 
-function remember(key: string, value: ParsedIntent, reader: IntentReader): ParsedIntent {
+function remember(key: string, value: ParsedIntent, reader: IntentReader): ReadIntent {
   if (cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }
   cache.set(key, value);
-  lastReader = reader;
-  return { ...value };
+  return { intent: { ...value }, reader };
 }
 
-export function parseIntent(message: string): ParsedIntent {
+export async function parseIntent(message: string): Promise<ReadIntent> {
   const text = (message ?? '').trim();
   const injection = detectInjection(text).matches;
   const key = cacheKey(text);
 
   const hit = cache.get(key);
   if (hit) {
-    lastReader = 'cache';
-    return { ...hit };
+    return { intent: { ...hit }, reader: 'cache' };
   }
 
   const { draft, confidence } = parseWithRules(text, injection);
@@ -549,7 +517,7 @@ export function parseIntent(message: string): ParsedIntent {
   // Step 3: only the sentences step 2 could not read, and only inside the timeout budget.
   if (text && Date.now() >= llmRetryAt && llmConfig()) {
     try {
-      const parsed = parseWithLlm(text);
+      const parsed = await parseWithLlm(text);
       if (parsed) {
         noteLlmSuccess();
         return remember(key, finalise(text, parsed, injection), 'llm');

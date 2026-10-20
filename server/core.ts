@@ -430,7 +430,7 @@ export async function getWallet(): Promise<Wallet> {
 export async function chat(message: string, declared: Provenance = 'USER'): Promise<ChatResponse> {
   await refreshBalances();
   const messageId = nextId('m');
-  const intent = parseIntent(message ?? '');
+  const { intent } = await parseIntent(message ?? '');
   const s = state.settings;
 
   // FR-15: an order to move money found in forwarded text is never the owner speaking.

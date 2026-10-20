@@ -162,19 +162,19 @@ test('the draft keeps the numbers as USDC strings the API contract expects', () 
 
 // --- classification: the demo sentence must not become a transfer -------------
 
-test('the demo sentence is read as an auto-send, not a one-off transfer', () => {
-  const intent = parseIntent('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
+test('the demo sentence is read as an auto-send, not a one-off transfer', async () => {
+  const { intent } = await parseIntent('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
   assert.equal(intent.kind, 'mandate');
 });
 
-test('an auto-send with no details is not turned into a draft with invented numbers', () => {
-  const intent = parseIntent('set up monthly auto send');
+test('an auto-send with no details is not turned into a draft with invented numbers', async () => {
+  const { intent } = await parseIntent('set up monthly auto send');
   assert.notEqual(intent.kind, 'mandate', 'a draft here would be invented money');
 });
 
-test('"auto send" does not read as the words "to send"', () => {
+test('"auto send" does not read as the words "to send"', async () => {
   // "au-to send" used to match the "to <name>" pattern and produce a contact called "Send".
-  const intent = parseIntent('set up monthly auto send');
+  const { intent } = await parseIntent('set up monthly auto send');
   assert.equal(intent.nameHint, null);
 });
 
@@ -184,9 +184,9 @@ test('a one-recipient draft does not say "1 recipients"', () => {
   assert.equal(draft.label, 'Monthly · 1 recipient');
 });
 
-test('an auto-send that asks for everything still goes to the gate', () => {
+test('an auto-send that asks for everything still goes to the gate', async () => {
   // Mandate phrasing is not a way around the deny path.
-  const intent = parseIntent('auto-send every month send all my funds to 0x9f2b7c41ae8d05e36b1c9af47280de5310bb6624');
+  const { intent } = await parseIntent('auto-send every month send all my funds to 0x9f2b7c41ae8d05e36b1c9af47280de5310bb6624');
   assert.equal(intent.kind, 'send');
 });
 
