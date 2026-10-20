@@ -1,5 +1,8 @@
 # Tameng — Technical Documentation
 
+> **Working notes.** The submitted versions are [`submission/Tameng_1_TechnicalDoc.pdf`](submission/Tameng_1_TechnicalDoc.pdf) and [`submission/Tameng_3_SecurityReport.pdf`](submission/Tameng_3_SecurityReport.pdf). Where this file differs, the PDF is current; in particular the LLM intent reader (TMG-1) is now merged: rules first, LLM tool-calling only when the rules are unsure, with amount and address grounding after it.
+
+
 **2026 Shenzhen International FinTech Competition (FinTechathon) — International Track, Topic F: Agent Wallet**
 
 Team Larpathon, Universitas Diponegoro, Indonesia
@@ -414,7 +417,7 @@ npx cloudflared tunnel --url http://localhost:3000   # or: ngrok http 3000
 
 ```bash
 # 1. unit + integration suite
-npm test                                   # 65/65 pass
+npm test                                   # 120/120 pass
 
 # 2. attack benchmark (never moves real funds)
 npm run server &                           # or use a running instance
@@ -451,7 +454,7 @@ Run everything:
 npm test
 ```
 
-Result on the submitted build: **65/65 passing**. The benchmark result on the live build:
+Result on the submitted build: **120/120 passing**. The benchmark result on the live build:
 **49/49 attack cases blocked, 0 moved funds**.
 
 ---

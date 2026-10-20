@@ -1,5 +1,8 @@
 # Security Self-Assessment
 
+> **Working notes.** The submitted versions are [`submission/Tameng_1_TechnicalDoc.pdf`](submission/Tameng_1_TechnicalDoc.pdf) and [`submission/Tameng_3_SecurityReport.pdf`](submission/Tameng_3_SecurityReport.pdf). Where this file differs, the PDF is current; in particular the LLM intent reader (TMG-1) is now merged: rules first, LLM tool-calling only when the rules are unsure, with amount and address grounding after it.
+
+
 ## 1. Permission tiers
 
 | Tier | Decision | Example |

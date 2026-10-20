@@ -51,7 +51,7 @@ Project board: **tameng.atlassian.net**, project `TMG`. Each folder's README lis
 cp .env.example .env            # simulated mode by default: no key, no chain
 npm install && (cd app && npm install)
 npm run server                  # http://localhost:3000 — prints the URL for the phone
-npm test                        # 65 tests: policy 13, security 29, onchain 2, server 21
+npm test                        # 120 tests: policy 42, agent 47, onchain 2, server 29
 ```
 
 Then, in a second shell: `cd app && npx expo start` (phone via Expo Go) or `npx expo start --web` (browser). The app falls back to `app/mocks/` when it has no backend, so the UI always runs. Full instructions, live-mode config, public deploy and troubleshooting: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).

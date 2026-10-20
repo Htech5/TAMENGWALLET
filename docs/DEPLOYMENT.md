@@ -63,7 +63,7 @@ node -e "console.log(require('crypto').createHash('sha256').update('123456').dig
 ## 4. Run the tests and the benchmark
 
 ```bash
-npm test        # 65 tests: policy 13, security 29, onchain 2, server 21
+npm test        # 120 tests: policy 42, agent 47, onchain 2, server 29
 ```
 
 Expected: `pass 65`, `fail 0`. The suite runs fully offline in simulated mode.

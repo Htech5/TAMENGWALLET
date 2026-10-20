@@ -28,7 +28,7 @@ What the submission contains:
 
 - **11 real transactions on Base Sepolia USDC** (testnet), every receipt `success`, covering a one-off transfer, two auto-send runs, an idempotent replay and a postponed run — hashes and explorer links in the Execution Evidence PDF.
 - **49 of 49 attack prompts blocked with zero funds moved** in the deterministic benchmark (54 cases total), plus six recorded red-team checks including an injected instruction, a look-alike recipient, a private-key request and a phone-style address change.
-- **65 automated tests** across the policy engine, security guards, on-chain layer and HTTP server.
+- **120 automated tests** across the policy engine, security guards, the LLM intent reader, the on-chain layer and the HTTP server.
 - A working mobile app (Expo / React Native) and a Node 22 backend with a signed-transaction policy gate; the repository below runs in simulated mode with no key and no chain access.
 
 Links:

@@ -11,7 +11,7 @@ Everything is in English and goes to fintechathon@ican-x.com before **20 Oct 202
 | 1 | Technical documentation (architecture, core algorithm, security design) | TMG-39 | [`TECHNICAL_DOC.md`](TECHNICAL_DOC.md) → [`submission/Tameng_1_TechnicalDoc.pdf`](submission/Tameng_1_TechnicalDoc.pdf) | done |
 | 2 | Presentation deck (≤ 10 min) | TMG-40 | [`build/deck.html`](build/deck.html) → [`submission/Tameng_2_Deck.pdf`](submission/Tameng_2_Deck.pdf) (12 slides) | done |
 | 3 | Demo video (≤ 5 min, optional) | TMG-44 | link | open |
-| 4 | Source code: README, GitHub link, deployment guide, tests | TMG-43 | [repo root](../README.md), [`DEPLOYMENT.md`](DEPLOYMENT.md), `npm test` (65 pass) | done |
+| 4 | Source code: README, GitHub link, deployment guide, tests | TMG-43 | [repo root](../README.md), [`DEPLOYMENT.md`](DEPLOYMENT.md), `npm test` (120 pass) | done |
 | 5 | Security self-assessment (permission tiers, threat model + known risks) | TMG-41 | [`SECURITY_REPORT.md`](SECURITY_REPORT.md) → [`submission/Tameng_3_SecurityReport.pdf`](submission/Tameng_3_SecurityReport.pdf) | done |
 | 6 | Execution evidence: real on-chain tx hashes + app screens | TMG-42 | [`EXECUTION_EVIDENCE.md`](EXECUTION_EVIDENCE.md) → [`submission/Tameng_4_ExecutionEvidence.pdf`](submission/Tameng_4_ExecutionEvidence.pdf) | done |
 | — | Final submission email | TMG-45 | [`SUBMISSION_EMAIL.md`](SUBMISSION_EMAIL.md) | draft ready |
