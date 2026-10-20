@@ -39,7 +39,7 @@
 
 import { detectInjection, detectInjectionInToolOutput } from '../policy/detectInjection.ts';
 import { normaliseAddress } from '../policy/lookalike.ts';
-import { checkProvenance } from '../policy/provenance.ts';
+import { checkProvenance, hasExternalContent, type Provenance } from '../policy/provenance.ts';
 import { parseMandateText } from './mandate.ts';
 
 export type IntentKind = 'send' | 'mandate' | 'blocked_report' | 'help';
@@ -77,6 +77,58 @@ const BLOCKED = /\b(what did you block|blocked|diblokir|serangan|attack)\b/i;
 // Softer than policy/detectInjection: catches wallet-specific drains phrased politely.
 const WALLET_ABUSE = /\b(all (my |the )?(funds|money|balance)|semua (uang|saldo)|everything i have)\b/i;
 
+// --- questions ----------------------------------------------------------------
+
+/**
+ * Words that turn a sentence into a question.
+ *
+ * "Can you send 10 USDC to Adik?" contains a verb, an amount and a name, so a reader that
+ * only looks for those reads it as a transfer. But nobody asked for one, and under the
+ * confirm threshold that transfer is silent: the money leaves the wallet with no PIN and no
+ * card. The marker has to come before the first money signal, so "send 10 USDC to Can" stays
+ * the order it is while "can you send 10 USDC to Adik" does not.
+ */
+const ASKING = /\b(?:can|could|would|should|how|what|who|whom|whose|where|when|why|which|bisa|boleh|apakah|gimana|bagaimana|apa|siapa|kapan|kenapa|mana|berapa)\b/i;
+
+/**
+ * Words that only count as a question at the start of the sentence. In the middle of one
+ * they are usually part of a statement: "I will send 10 USDC to Adik" is an order.
+ */
+const ASKING_FIRST =
+  /^(?:can|could|would|should|may|might|shall|do|does|did|is|are|am|was|were|will|how|what|who|where|when|why|which|bisa|boleh|apakah|gimana|bagaimana|apa|siapa|kapan|kenapa|mana|berapa)\b/i;
+
+/** A command at the start of the sentence: "send 10 USDC to Adik?" is still an order. */
+const COMMAND = /^\s*(?:send|kirim|transfer|pay|bayar|move|pindah)\b/i;
+
+/** Where the sentence first talks about money: the verb, or the number. */
+function firstMoneySignal(text: string): number {
+  const verb = SEND_VERB.exec(text);
+  const digit = text.search(/\d/);
+  const at = verb ? verb.index : -1;
+  if (at === -1) return digit;
+  if (digit === -1) return at;
+  return Math.min(at, digit);
+}
+
+/**
+ * Is this a question rather than an order?
+ *
+ * The rule reader cannot tell the difference on its own, and the model cannot be trusted to
+ * tell it on every turn either, so the answer has to be decided in code, before either
+ * reader can turn a question into a transfer.
+ */
+function isQuestion(text: string): boolean {
+  const marker = ASKING.exec(text);
+  if (marker) {
+    const signal = firstMoneySignal(text);
+    if (signal === -1 || marker.index < signal) return true;
+  }
+  if (ASKING_FIRST.test(text.trim())) return true;
+  // A trailing question mark asks, unless the sentence already commands.
+  return text.trimEnd().endsWith('?') && !COMMAND.test(text);
+}
+
+
 // --- LLM reader ---------------------------------------------------------------
 
 interface LlmConfig {
@@ -99,10 +151,13 @@ function llmConfig(): LlmConfig | null {
     url,
     model: (process.env.LLM_MODEL || 'gpt-4o-mini').trim(),
     // 2500 ms, not 8000. The model is only called for a sentence the rule reader could not
-    // read, and the budget has to cover the gateway's p95 or the fallback fires at random.
-    // Measured on the current gateway (nvidia/nemotron-3-ultra): median 1376 ms, p95 2079 ms.
-    // A gateway that cannot answer one intent extraction inside this is the thing to replace,
-    // not the timeout.
+    // read, so this budget is the whole wait the owner sees for an ambiguous sentence.
+    //
+    // Measured on the current gateway (nvidia/nemotron-3-ultra, 40 samples via
+    // agent/measure-llm.mjs): median 2197 ms, p95 13083 ms, and 18 of 40 requests over
+    // this budget. So the honest reading is that this gateway is too slow to sit in the
+    // chat path, and the timeout is a ceiling that keeps the wait bounded while the
+    // fallback covers the rest. The gateway is the thing to replace — not this number.
     timeoutMs: Number.isFinite(timeout) && timeout >= 500 ? timeout : 2500,
   };
 }
@@ -383,6 +438,15 @@ function finalise(text: string, draft: DraftIntent, detected: string[]): ParsedI
   // Forwarded content is still an order only in the sense that it must reach the deny path.
   if (checkProvenance(text).blocked && kind !== 'send') kind = 'send';
 
+  // A question asks; it does not instruct. Both readers can read "can you send 10 USDC to
+  // Adik?" as a transfer — the rules see a verb, an amount and a name, and the model is
+  // asked the same question the rules were — and below the confirm threshold that transfer
+  // is silent. So the question is decided here, after both readers, and it is decided in
+  // code: no gateway, and no model, gets to move money the owner only asked about.
+  // A question also does not draft an auto-send: a draft is one tap and a PIN away from
+  // moving money every month.
+  if ((kind === 'send' || kind === 'mandate') && isQuestion(text)) kind = 'help';
+
   // An auto-send is a draft only when the owner actually described one. A sentence that just
   // mentions auto-send must not produce a draft, because the draft can be confirmed with a
   // PIN: inventing amounts there would be inventing money. An incomplete request that still
@@ -472,31 +536,40 @@ export interface ReadIntent {
 
 // Same sentence, same answer, no second round trip. The key carries the gateway fingerprint,
 // so changing LLM_BASE_URL or LLM_MODEL never serves a stale answer from the old one.
+//
+// Only a real model answer is cached. A rules answer is free to recompute, and a rules
+// answer produced *because the model failed* must not be cached at all: one gateway that
+// 500s once would otherwise pin that sentence to the fallback for the life of the process,
+// long after the gateway recovered.
 const CACHE_MAX = 200;
 const cache = new Map<string, ParsedIntent>();
 
-function cacheKey(text: string): string {
+function cacheKey(text: string, declared: Provenance): string {
   const config = llmConfig();
-  return text + '\u0000' + (config ? config.url + '|' + config.model : 'rules-only');
+  // The provenance is part of the key: the same sentence means different things depending
+  // on where it came from, so a USER answer must never be served for EXTERNAL text.
+  return text + '\u0000' + declared + '\u0000' + (config ? config.url + '|' + config.model : 'rules-only');
 }
 
 function remember(key: string, value: ParsedIntent, reader: IntentReader): ReadIntent {
-  if (cache.size >= CACHE_MAX) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
+  if (reader === 'llm') {
+    if (cache.size >= CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, value);
   }
-  cache.set(key, value);
-  return { intent: { ...value }, reader };
+  return { intent: { ...value, injection: [...value.injection] }, reader };
 }
 
-export async function parseIntent(message: string): Promise<ReadIntent> {
+export async function parseIntent(message: string, declared: Provenance = 'USER'): Promise<ReadIntent> {
   const text = (message ?? '').trim();
   const injection = detectInjection(text).matches;
-  const key = cacheKey(text);
+  const key = cacheKey(text, declared);
 
   const hit = cache.get(key);
   if (hit) {
-    return { intent: { ...hit }, reader: 'cache' };
+    return { intent: { ...hit, injection: [...hit.injection] }, reader: 'cache' };
   }
 
   const { draft, confidence } = parseWithRules(text, injection);
@@ -505,7 +578,10 @@ export async function parseIntent(message: string): Promise<ReadIntent> {
   // Step 1: attacks and forwarded orders stop here and never reach the model. The outcome of
   // an attack has to be the same on a healthy gateway and on a dead one, otherwise "we block
   // prompt injection" is a claim about the gateway, not about our code.
-  if (injection.length > 0 || checkProvenance(text).blocked) {
+  // The declared provenance is part of this: text the caller marked EXTERNAL never reaches
+  // the model either, whatever it says. The model reads the owner's sentences, and one word
+  // from somewhere else is enough to stop it.
+  if (injection.length > 0 || hasExternalContent(text, declared)) {
     return remember(key, fromRules, 'rules');
   }
 

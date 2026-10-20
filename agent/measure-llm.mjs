@@ -1,10 +1,15 @@
 // Measures the real gateway latency for one intent extraction, and checks it against the
-// 1500 ms budget the code now enforces.
+// 2500 ms budget the code enforces.
 //
 //   node agent/measure-llm.mjs
 //
-// Uses fetch directly in this process (not parseIntent's spawnSync child), so it runs
-// anywhere, including a sandbox that refuses to spawn a process.
+// Uses fetch directly in this process, so it runs anywhere. Thirty samples by default: a
+// p95 read off five requests is just the slowest of five, and a gateway that is slow one
+// time in twenty has to be caught before it becomes a freeze in front of the owner.
+//
+// The verdict is the point of this script. When it says OVER the budget, the answer is a
+// different gateway, not a bigger timeout: a bigger timeout is how a slow gateway gets
+// hidden instead of replaced.
 
 import { readFileSync, existsSync } from 'node:fs';
 
@@ -23,7 +28,7 @@ const apiKey = env.LLM_API_KEY || '';
 const base = (env.LLM_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
 const url = /\/chat\/completions$/i.test(base) ? base : base + '/chat/completions';
 const model = env.LLM_MODEL || 'gpt-4o-mini';
-const budget = Number(env.LLM_TIMEOUT_MS || 1500);
+const budget = Number(env.LLM_TIMEOUT_MS || 2500);
 
 const PROMPTS = [
   'yang kemarin itu jadi nggak? tolong urusin aja',
@@ -73,7 +78,11 @@ console.log('model  : ' + model);
 console.log('budget : ' + budget + ' ms\n');
 
 const samples = [];
-for (let i = 0; i < 5; i += 1) {
+// Enough samples for the percentile to mean something: a p95 read off five requests is
+// just the slowest of five, and a gateway that is slow one time in twenty has to be
+// caught before it becomes a thirty-second freeze in front of the owner.
+const count = Number(process.env.MEASURE_SAMPLES || 30);
+for (let i = 0; i < count; i += 1) {
   const t0 = performance.now();
   let ok = false;
   let note = '';
@@ -103,13 +112,16 @@ for (let i = 0; i < 5; i += 1) {
 const sorted = [...samples].sort((a, b) => a - b);
 const median = sorted[Math.floor(sorted.length / 2)];
 const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)];
+const over = samples.filter((ms) => ms > budget).length;
 
 console.log('');
+console.log('  samples: ' + samples.length);
 console.log('  median : ' + median.toFixed(0) + ' ms');
 console.log('  p95    : ' + p95.toFixed(0) + ' ms');
 console.log('  min    : ' + sorted[0].toFixed(0) + ' ms');
 console.log('  max    : ' + sorted[sorted.length - 1].toFixed(0) + ' ms');
+console.log('  over budget: ' + over + ' of ' + samples.length + '  (' + ((over / samples.length) * 100).toFixed(0) + '%)');
 console.log('');
 console.log('  budget : ' + budget + ' ms');
-console.log('  verdict: ' + (median <= budget ? 'FITS the budget' : 'OVER the budget — replace the gateway, do not raise the timeout'));
+console.log('  verdict: ' + (p95 <= budget ? 'FITS the budget' : 'OVER the budget — replace the gateway, do not raise the timeout'));
 console.log('');

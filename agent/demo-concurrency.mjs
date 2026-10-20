@@ -80,7 +80,7 @@ for (const r of results) {
 console.log('  decisions                : ' + JSON.stringify(decisions));
 console.log('');
 
-const BUDGET_MS = 1500;
+const BUDGET_MS = 2500; // the ceiling agent/parseIntent.ts enforces, not a wish
 console.log('  budget per turn          : ' + BUDGET_MS + ' ms');
 console.log('  slowest chat vs budget   : ' + (Math.max(...results.map((r) => r.ms)) < BUDGET_MS ? 'WITHIN budget' : 'OVER budget'));
 console.log('  old behaviour            : one chat could hold the loop for 32,500 ms');

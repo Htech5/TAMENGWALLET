@@ -61,6 +61,17 @@ test('wallet returns the shape the app reads', async () => {
   assert.equal(typeof data.unreadEvents, 'number');
 });
 
+test('a question does not move money', async () => {
+  // "Can you send 10 USDC to Adik?" asks whether it is possible. It is not an order, and
+  // under the confirm threshold a transfer is silent, so reading it as one would move money
+  // the owner never asked to move.
+  const before = Number(state.wallet.balance);
+  const { data } = await call('/chat', { method: 'POST', body: { message: 'can you send 10 USDC to Adik?' } });
+  assert.notEqual(data.card?.decision, 'allow', 'a question must never be answered as a transfer');
+  assert.equal(Number(state.wallet.balance), before, 'no money may move on a question');
+  assert.equal(data.reader, 'rules');
+});
+
 test('the chat response says which reader answered', async () => {
   // A fallback that is not recorded is a fallback nobody can prove. The reader travels with
   // the answer so "the model ran" is something the response shows, not something we claim.
@@ -136,6 +147,47 @@ test('resuming the agent does need a PIN', async () => {
   assert.equal(noPin.data.error.code, 'PIN_REQUIRED');
   const ok = await call('/settings', { method: 'PATCH', body: { paused: false }, pin: PIN });
   assert.equal(ok.data.paused, false);
+});
+
+test('a retried chat with the same key sends once', async () => {
+  // The plan calls this the most fragile point of the whole change: the chat endpoint moves
+  // money immediately, and a retried POST must not move it twice. A retry that arrives while
+  // the first one is still running is the dangerous case, so both are fired at once.
+  const before = Number(state.wallet.balance);
+  const body = { message: 'send 10 usdc to Adik' };
+  const [first, retry] = await Promise.all([
+    call('/chat', { method: 'POST', body, key: 'k-chat-1' }),
+    call('/chat', { method: 'POST', body, key: 'k-chat-1' }),
+  ]);
+
+  assert.equal(first.data.messageId, retry.data.messageId, 'the retry gets the same answer');
+  assert.equal(Number(state.wallet.balance), before - 10, 'the money may only move once');
+});
+
+test('two different keys are two separate transfers', async () => {
+  // The counterpart of the test above: the key deduplicates, it does not swallow a
+  // deliberate second request.
+  const before = Number(state.wallet.balance);
+  const body = { message: 'send 10 usdc to Adik' };
+  const [first, second] = await Promise.all([
+    call('/chat', { method: 'POST', body, key: 'k-chat-2' }),
+    call('/chat', { method: 'POST', body, key: 'k-chat-3' }),
+  ]);
+  assert.notEqual(first.data.messageId, second.data.messageId);
+  assert.equal(Number(state.wallet.balance), before - 20, 'two keys are two transfers');
+});
+
+test('a retried chat with the same client message id sends once', async () => {
+  // The app sends its own id for the message, and the server uses it when no
+  // Idempotency-Key header was sent. An app that retries after a network error therefore
+  // does not move the money twice, even though it sends no header at all.
+  const before = Number(state.wallet.balance);
+  const body = { message: 'send 10 usdc to Adik', clientMessageId: 'u-123-send' };
+  const first = await call('/chat', { method: 'POST', body });
+  const retry = await call('/chat', { method: 'POST', body });
+
+  assert.equal(first.data.messageId, retry.data.messageId, 'the retry gets the same answer');
+  assert.equal(Number(state.wallet.balance), before - 10, 'the money may only move once');
 });
 
 test('a retried confirm with the same key sends once', async () => {

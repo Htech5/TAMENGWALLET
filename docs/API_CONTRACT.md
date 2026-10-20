@@ -125,6 +125,8 @@ Aturan UI (copy bahasa Inggris tanpa titik dua dan tanpa em dash):
   "card": { "...": "DecisionCard | ClarifyCard | MandateDraftCard | null" }
 }
 ```
+`clientMessageId` = id pesan milik klien. Dipakai sebagai idempotency key kalau header
+`Idempotency-Key` tidak dikirim, jadi retry pesan yang sama **tidak** mengirim uang dua kali.
 `reader` = `"llm" | "rules" | "cache"`: siapa yang menjawab pesan itu. Model hanya ditanya
 kalau rule reader tidak bisa membaca kalimatnya, jadi `reader` membuktikan apakah model
 benar-benar jalan — atau diam-diam mundur ke rules. Tidak pernah dipakai untuk keputusan

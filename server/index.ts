@@ -123,7 +123,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!message.trim()) throw new ApiError('VALIDATION_ERROR', 'Type a message first.', 400);
     // FR-15: the caller may declare where the text came from. Anything but "user" is EXTERNAL.
     const declared = String(body.source ?? 'user').toLowerCase() === 'user' ? 'USER' : 'EXTERNAL';
-    return send(res, 200, await idempotent(key, () => core.chat(message, declared)));
+    // The client message id is the app's own id for this message, so it works as the
+    // idempotency key when no header was sent: an app that retries the same message must
+    // not move the money twice. The header still wins, for callers that manage their own keys.
+    const clientId = typeof body.clientMessageId === 'string' ? body.clientMessageId.trim() : '';
+    return send(res, 200, await idempotent(key || clientId || undefined, () => core.chat(message, declared)));
   }
 
   // /confirm/:intentId

@@ -39,6 +39,9 @@ interface ReqOpts {
   body?: unknown;
   pin?: string;
   idempotent?: boolean;
+  /** The key itself. Use the caller's own id for the request so a retry of the same
+   *  message is the same key, and the server can tell it apart from a new message. */
+  idempotencyKey?: string;
 }
 
 async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
@@ -48,7 +51,7 @@ async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
   };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (opts.pin) headers['X-Pin'] = opts.pin;
-  if (opts.idempotent) headers['Idempotency-Key'] = Crypto.randomUUID();
+  if (opts.idempotent) headers['Idempotency-Key'] = opts.idempotencyKey ?? Crypto.randomUUID();
 
   let res: Response;
   try {
@@ -73,8 +76,12 @@ async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
 const liveApi: Api = {
   mode: 'live',
   getWallet: () => request('/wallet'),
-  chat: (message, clientMessageId) =>
-    request('/chat', { method: 'POST', body: { message, clientMessageId: clientMessageId ?? Crypto.randomUUID() }, idempotent: true }),
+  chat: (message, clientMessageId) => {
+    // The client's id for this message is also the idempotency key: a retry of the same
+    // message carries the same key, so the server sends the money once.
+    const id = clientMessageId ?? Crypto.randomUUID();
+    return request('/chat', { method: 'POST', body: { message, clientMessageId: id }, idempotent: true, idempotencyKey: id });
+  },
   confirm: (intentId, approve, pin) =>
     request(`/confirm/${encodeURIComponent(intentId)}`, { method: 'POST', body: { approve }, pin, idempotent: true }),
   getActivity: (cursor) => request(`/activity?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),

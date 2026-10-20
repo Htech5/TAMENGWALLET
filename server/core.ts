@@ -428,11 +428,16 @@ export async function getWallet(): Promise<Wallet> {
 }
 
 export async function chat(message: string, declared: Provenance = 'USER'): Promise<ChatResponse> {
-  const { intent, reader } = await parseIntent(message ?? '');
+  // The declared provenance goes into the intent reader too, so text the caller marked
+  // EXTERNAL never reaches the model — not only text that looks forwarded on its own.
+  const { intent, reader } = await parseIntent(message ?? '', declared);
   // The reader is attached once, here, rather than on each return below: a path that
   // forgot it would answer without saying who answered, which is the thing this field
   // exists to prevent.
   const answer = await decide(message, declared, intent);
+  // Logged when the model was actually consulted, so "the model is running" can be seen on a
+  // live server without a debugger — and so a turn that fell back to the rules is visible too.
+  if (reader === 'llm' || reader === 'cache') console.log('[tameng] reader=' + reader + ' kind=' + intent.kind);
   return { ...answer, reader };
 }
 

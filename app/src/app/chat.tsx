@@ -35,7 +35,9 @@ export default function Chat() {
     const message = raw.trim();
     if (!message || busy) return;
     setText('');
-    const id = `u-${Date.now()}`;
+    // The id identifies this message, not this attempt. A retry after a network error
+    // carries the same id, so the server recognises it and the money moves once.
+    const id = `u-${Date.now()}-${message}`;
     chatStore.add({ id, from: 'me', text: message, at: Date.now() });
     setBusy(true);
     try {

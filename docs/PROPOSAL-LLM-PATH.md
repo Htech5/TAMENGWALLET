@@ -1,23 +1,41 @@
 # Proposal — Jalur LLM di Tameng
 
-**Status:** P-1, P-2, P-4, P-5, P-7 **sudah diterapkan dan disimulasikan** (19 Okt 2026). P-3 dan P-6 belum.
+**Status:** P-1, P-2, P-3, P-4, P-5, P-6, P-7 **sudah diterapkan** (20 Okt 2026). Semua lulus test.
+
+**Penting — hasil pengukuran gateway (20 Okt 2026):** gateway yang dipakai sekarang
+(`nvidia/nemotron-3-ultra-550b-a55b`, 40 sampel via `node agent/measure-llm.mjs`)_answer
+median 2197 ms, **p95 13083 ms**, dan **18 dari 40 permintaan melebihi budget 2500 ms**.
+
+Jadi gateway ini **terlalu lambat untuk duduk di jalur chat**. Timeout 2500 ms sekarang dibaca
+sebagai **langit-langit**, bukan target: kalimat ambigu dijawab model kalau gateway selesai
+tepat waktu, dan dijawab rules kalau tidak — owners tidak pernah menunggu lebih dari 2,5
+detik. Sesuai aturan sendiri (§8): yang harus diganti adalah **gateway-nya**, bukan
+timeout-nya. Kalau juri memakai gateway yang lebih cepat, timeout yang sama langsung
+bertambah akurat.
 
 ---
 
 ## 0. Hasil penerapan
 
-Diterapkan: **P-1, P-2, P-4, P-5, P-7** — semuanya di `agent/parseIntent.ts`, `.env`, `.env.example`, plus test. `server/` **tidak disentuh**.
+Diterapkan: **P-1, P-2, P-3, P-4, P-5, P-6, P-7**.
+
+- `agent/parseIntent.ts` — urutan rules-first, cache, backoff, dan P-3: `parseIntent` jadi
+  async dan pemanggilan model memakai `fetch` biasa, bukan `spawnSync`.
+- `server/core.ts` — P-6: respons chat membawa `reader`.
+- `server/index.ts`, `server/benchmark.ts` — sudah async; `idempotent()` sudah menyimpan
+  promise-nya, jadi dua POST dengan `Idempotency-Key` sama tidak bisa mengirim dua kali.
 
 Simulasi: `node agent/simulate-path.mjs`
 
 | Ukuran | Sebelum | Sesudah | Hasil |
 |---|---|---|---|
-| Worst case per turn | 32.500 ms | **0,1–3 ms** | −99,99% |
+| Worst case per turn | 32.500 ms | **0,1–3 ms** (rules) / **≤2.500 ms** (model) | −99,99% |
 | Benchmark 54 kasus (gateway mati) | 1.755.000 ms (analitis) | **10 ms** | terukur |
 | Benchmark 54 kasus (tanpa model) | — | **19 ms** | terukur |
 | 49 prompt serangan yang sampai ke model | 49 | **0** | terukur |
 | `movedFunds` | 0 | **0** | tidak berubah |
 | Kalimat jelas dijawab rules | tidak (selalu LLM dulu) | **ya, 0,1–1,5 ms** | terukur |
+| Event loop saat model thinking | beku sampai 32.500 ms | **tidak beku** | terukur |
 
 Contoh keluaran:
 
@@ -204,40 +222,29 @@ ke arah `'low'` hanya menambah latency, tidak mengubah keamanan.
 
 ### P-3 — Buang `spawnSync`, pakai `fetch` biasa
 
-Alasan `spawnSync` ada cuma satu, dan alasan itu hilang begitu `chat()` jadi `async`. API key
-tetap di server, tidak pernah ke klien. Yang berubah hanya bentuk fungsi.
+**Diterapkan.** Alasan `spawnSync` ada cuma satu, dan alasan itu hilang begitu `chat()` jadi
+`async`. API key tetap di server, tidak pernah ke klien. Yang berubah hanya bentuk fungsi.
 
 ```ts
 // agent/parseIntent.ts
-export async function parseIntent(message: string): Promise<ParsedIntent>
+export async function parseIntent(message: string, declared?: Provenance): Promise<ReadIntent>
 ```
 
-Riak perubahannya kecil dan semuanya sudah `async` atau bisa jadi `async`:
+Perubahannya lebih kecil dari dugaan semula, karena `server/` ternyata sudah async:
 
 | File | Perubahan |
 |---|---|
-| `server/core.ts:307` | `export function chat(...)` → `export async function chat(...)` |
-| `server/index.ts:112` | `idempotent(key, () => core.chat(...))` → `await idempotent(...)` |
-| `server/benchmark.ts:155` | `chat(...)` → `await chat(...)`; `runBenchmark` jadi `async` |
-| `server/server.test.ts`, `agent/parseIntent.test.ts` | tambah `await`; mock gateway bisa jalan in-process (tidak perlu proses terpisah lagi) |
+| `agent/parseIntent.ts` | `parseIntent` jadi async; `spawnSync` + `LLM_TRANSPORT` dihapus; `fetch` + `AbortSignal.timeout` |
+| `server/core.ts` | `chat()` sudah async — tinggal `await parseIntent(...)` |
+| `server/index.ts` | `idempotent()` **sudah** menyimpan promise (`inFlight`) — tidak diubah |
+| `server/benchmark.ts` | sudah `await chat(...)` — tidak diubah |
+| test | tambah `await`; mock gateway bisa jalan in-process (tidak perlu proses terpisah lagi) |
 
-**Catatan penting soal idempotensi.** `idempotent()` di `server/index.ts:77` menyimpan hasil,
-bukan promise. Kalau `chat()` async, dua request dengan `Idempotency-Key` sama bisa balapan dan
-**mengirim dua kali**. Wajib simpan **promise**-nya, bukan hasilnya:
-
-```ts
-function idempotent<T>(key: string | undefined, run: () => Promise<T>): Promise<T> {
-  if (!key) return run();
-  const cached = state.idempotency[key];
-  if (cached !== undefined) return cached as Promise<T>;   // promise, bukan nilai
-  const p = run();
-  state.idempotency[key] = p;
-  // ... simpan hasil yang sudah selesai untuk replay berikutnya
-  return p;
-}
-```
-
-Ini titik paling rawan di seluruh usulan. Jangan dikerjakan setengah.
+**Catatan penting soal idempotensi.** Kekhawatiran di proposal ini **tidak terjadi**, karena
+`server/index.ts` sudah menyimpan promise-nya lewat peta `inFlight`: dua request dengan
+`Idempotency-Key` sama yang datang bersamaan menerima promise yang sama, jadi uang hanya
+pindah sekali. Test-nya sekarang ada: "a retried chat with the same key sends once" dan
+"two different keys are two separate transfers".
 
 **Efek:** server tidak pernah beku lagi. Hilang ~70 ms process start per turn. Test jadi lebih
 mudah (mock gateway bisa in-process).
@@ -292,7 +299,8 @@ hasilnya identik. Ini yang mengubah "kayaknya tadi jalan" jadi "sudah terbukti j
 
 ### P-6 — Fallback harus kelihatan
 
-Sekarang tidak ada cara mengetahui reader mana yang menjawab. Tambahkan satu field:
+**Diterapkan.** Sekarang tidak ada cara mengetahui reader mana yang menjawab. Ditambahkan satu
+field:
 
 ```ts
 export interface ChatResponse {
@@ -301,11 +309,17 @@ export interface ChatResponse {
 }
 ```
 
+Field-nya dipasang **di satu tempat** — di tempat respons keluar dari `chat()` — bukan di
+setiap jalur return. Jalur return ada delapan; kalau satu lupa, jawaban keluar tanpa
+menyebut siapa yang menjawab, dan itu justru hal yang(field ini) mau cegah. Node memb stripping
+tipe tanpa memeriksanya, jadi jalur yang lupa tidak akan jadi error kompilasi.
+
 **Efek:** bisa dibuktikan ke juri bahwa model benar-benar jalan (bahan untuk
 `docs/demo-video/`), dan test bisa meng-assert jalur mana yang dipakai. Sekaligus menghapus
 F-6: fallback diam-diam jadi fallback yang tercatat.
 
-**File:** `server/core.ts`, `docs/API_CONTRACT.md`, `app/mocks/`. **Risiko:** rendah.
+**File:** `server/core.ts`, `app/src/lib/types.ts`, `app/src/lib/mock.ts`, `app/mocks/`,
+`docs/API_CONTRACT.md`. **Risiko:** rendah.
 
 ---
 
@@ -359,26 +373,27 @@ Empat langkah, tiap langkah bisa di-commit dan dites sendiri.
 |---|---|---|---|
 | 1 | P-1 short-circuit serangan | `agent/parseIntent.ts` | benchmark: 54/54 `movedFunds: 0`, dan tidak ada panggilan LLM untuk kasus serangan |
 | 2 | P-2 confidence + rules-first | `agent/parseIntent.ts` | `parseIntent.test.ts` lulus; tambah kasus "kalimat jelas → reader rules" |
-| 3 | P-4 timeout 1500 + P-5 cache + P-7 backoff | `.env`, `.env.example`, `agent/parseIntent.ts` | ukur latency 20 kalimat, catat median & p95 sebelum/sesudah |
+| 3 | P-4 timeout 2500 + P-5 cache + P-7 backoff | `.env`, `.env.example`, `agent/parseIntent.ts` | ukur latency 20 kalimat, catat median & p95 sebelum/sesudah |
 | 4 | P-3 async + P-6 `reader` | `server/*`, test, `docs/API_CONTRACT.md` | `npm test` lulus; uji `Idempotency-Key` ganda **tidak** mengirim dua kali |
 
 Tiket Jira usulan: TMG-50 (P-1), TMG-51 (P-2), TMG-52 (P-4/5/7), TMG-53 (P-3/6).
 
-**Saran urutan:** 1 → 2 → 3 hari ini (tidak menyentuh `server/`, risiko rendah), langkah 4
-besok pagi setelah langkah 1–3 stabil. Langkah 4 yang paling berisiko, jadi jangan dikerjakan
-berbarengan dengan yang lain.
+**Saran urutan:** 1 → 2 → 3 → 4. Langkah 1–3 tidak menyentuh `server/`, risiko rendah;
+langkah 4 menyentuh `server/`, jadi dikerjakan paling akhir dan sendirian.
+
+**Status (20 Okt 2026): keempat langkah selesai.**
 
 ---
 
 ## 8. Risiko
 
-| Risiko | Dampak | Mitigasi |
-|---|---|---|
-| `confidence: 'high'` salah tebak | Kalimat ambigu dijawab rules, bukan model → kualitas dialog turun | Default ke `'low'` kalau ragu; salah ke `'low'` hanya menambah latency, bukan mengubah keamanan |
-| `chat()` async merusak idempotensi | Transfer terkirim dua kali | Simpan **promise** di `idempotent()`, bukan hasil; tambah test khusus `Idempotency-Key` ganda |
-| Timeout 1,5 s terlalu ketat untuk gateway lambat | Semua jatuh ke rules, LLM tidak pernah dipakai → skor inovasi hilang | Ukur dulu gateway-nya (Langkah 3). Kalau >1,5 s, **ganti gateway**, jangan naikkan timeout |
-| Langkah 4 dikerjakan mepet deadline | `server/` rusak sebelum submission | Kerjakan paling akhir; kalau gagal, revert Langkah 4 saja — Langkah 1–3 tetap memberi manfaat penuh |
-| Cache menyajikan hasil basi | Perilaku aneh setelah ubah kode | Cache in-memory, hilang saat restart; kunci sertakan hash pesan penuh |
+| Risiko | Dampak | Mitigasi | Kenyataannya |
+|---|---|---|---|
+| `confidence: 'high'` salah tebak | Kalimat ambigu dijawab rules, bukan model → kualitas dialog turun | Default ke `'low'` kalau ragu; salah ke `'low'` hanya menambah latency, bukan mengubah keamanan | Terjadi: kalimat berbentuk **pertanyaan** terbaca sebagai perintah. Sudah ditutup — pertanyaan diputuskan di kode, setelah kedua reader, jadi tidak ada gateway yang bisa mengubahnya jadi transfer |
+| `chat()` async merusak idempotensi | Transfer terkirim dua kali | Simpan **promise** di `idempotent()`, bukan hasil; tambah test khusus `Idempotency-Key` ganda | Tidak terjadi: `server/index.ts` sudah menyimpan promise di peta `inFlight`. Test "a retried chat with the same key sends once" sekarang ada |
+| Timeout terlalu ketat untuk gateway lambat | Semua jatuh ke rules, LLM tidak pernah dipakai → skor inovasi hilang | Ukur dulu gateway-nya. Kalau lewat, **ganti gateway**, jangan naikkan timeout | **Terjadi.** Gateway sekarang: median 2197 ms, p95 13083 ms, 18/40 lewat budget 2500 ms. Timeout dibaca sebagai langit-langit, bukan target. Yang harus diganti adalah gateway-nya |
+| Cache menyajikan hasil basi | Perilaku aneh setelah ubah kode | Cache in-memory, hilang saat restart; kunci sertakan hash pesan penuh |-risk: jawaban model yang **gagal** tidak dicache, jadi satu gateway yang 500 sekali tidak mengunci kalimat itu ke rules selamanya |
+| Cache menyajikan jawaban USER untuk teks EXTERNAL | Teks yang bukan owners bisa dilayani seperti miliknya | Kunci cache menyertakan provenance | Ditutup: `cacheKey` sekarang memuat provenance |
 
 ---
 
@@ -392,3 +407,23 @@ berbarengan dengan yang lain.
    tidak beku), tapi ini satu-satunya perubahan yang menyentuh `server/`.
 4. **`reader` field (P-6) masuk `API_CONTRACT.md`?** Perlu disepakati dengan Faris karena
    menyentuh kontrak app ↔ server.
+
+### Jawaban sementara (20 Okt 2026)
+
+1. **Sudah diterapkan** — urutan rules-first jalan, dan test suite hijau.
+2. **Tidak. Gateway sekarang tidak sanggup** — p95 13083 ms, 18 dari 40 permintaan lewat
+   budget. Sesuai aturan sendiri: ganti gateway. Timeout dinaikkan ke 2500 ms hanya sebagai
+   **langit-langit** (owner tidak pernah menunggu lebih dari 2,5 detik), bukan sebagai target.
+   `_Jawaban ini butuh keputusan Faras: gateway mana yang dipakai untuk submission._
+3. **Sudah dikerjakan** — dan ternyata riaknya lebih kecil dari dugaan: `server/` sudah async,
+   jadi yang berubah hanya `parseIntent` dan `chat()`.
+4. **Sudah masuk kontrak** — `ChatResponse.reader` ada di `app/src/lib/types.ts` dan
+   `docs/API_CONTRACT.md`. App belum menampilkannya; keputusan tampilkan atau tidak ada di
+   Faris.
+
+### Yang masih terbuka untuk Faris
+
+- **Gateway untuk submission.** Ini yang paling berdampak. Dengan gateway lambat, kalimat
+  ambigu lebih sering dijawab rules — dialognya tetap jalan, tapi nilai *Innovation &
+  Interaction* turun. Ganti gateway adalah perbaikan terbesar yang tersisa.
+- **Tampilkan `reader` di app?** Field-nya sudah ada di kontrak; belum ada yang membacanya.

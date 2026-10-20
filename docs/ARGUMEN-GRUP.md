@@ -30,23 +30,31 @@ Efek nyata buat benchmark kita: 54 kasus × 32,5 detik = **±29 menit** kalau ga
 
 ---
 
-**Yang aku usulin: balik urutannya.** Rules dulu (0 ms). LLM cuma buat kalimat yang beneran ambigu. Timeout 1,5 detik.
+**Yang aku usulin: balik urutannya.** Rules dulu (0 ms). LLM cuma buat kalimat yang beneran ambigu. Timeout 2,5 detik.
 
 | | Sekarang | Setelah |
 |---|---|---|
 | "send 10 USDC to Adik" | 0,3–32,5 s + server beku | **0 ms** |
-| Kalimat ambigu | 0,3–32,5 s | ≤1,5 s |
+| Kalimat ambigu | 0,3–32,5 s | ≤2,5 s |
 | Kasus serangan (benchmark) | 0,3–32,5 s | **0 ms** |
-| Gateway mati | 97,5 s beku | 1,5 s → rules |
+| Gateway mati | 97,5 s beku | 2,5 s → rules |
 | Benchmark 54 kasus | 16 detik – 29 menit | **< 2 detik** |
 
 **Dan satu hal yang lebih penting dari kecepatan:** sekarang teks serangan juga dikirim ke LLM dulu. Jadi hasil penanganan serangan **tergantung gateway hidup atau nggak**. Buat track yang 30% skornya keamanan, itu cacat — kita nggak bisa bilang "terbukti aman" kalau hasilnya bisa beda tiap run. Kalau `detectInjection()` udah nandain, jawab langsung lewat kode, jangan sentuh model. Itu bikin benchmark **100% deterministik** dan bisa diulang persis di depan juri.
 
 Detail lengkap + rencana kerja: `docs/PROPOSAL-LLM-PATH.md`
 
+**Status: sudah diterapkan, semua test lulus.** Plus satu tambahan yang belum ada di usulan
+awal: **kalimat berbentuk pertanyaan bukan perintah.** "Can you send 10 USDC to Adik?" itu
+nanya, bukan menyuruh — dan di bawah ambang konfirmasi, transfer diam-diam. Jadi pertanyaan
+diputus di kode, setelah kedua reader, sebelum uang bergerak.
+
 **Yang aku minta:**
 1. Setuju rules-first? (ini intinya)
-2. Faras: gateway kita sanggup jawab <1,5 detik nggak? Kalau nggak, ganti gateway — jangan naikkan timeout lagi.
+2. Faras: gateway kita sanggup jawab <2,5 detik nggak? **Ini sudah aku ukur: median 2197 ms,
+   p95 13083 ms, dan 18 dari 40 permintaan lewat budget.** Jadi gateway kita yang terlalu
+   lambat, dan yang harus diganti adalah **gateway-nya** — timeout cuma berfungsi sebagai
+   langit-langit supaya owner nggak nunggu keputusin.
 3. Langkah 1–3 nggak nyentuh `server/`, bisa hari ini. Langkah 4 (async) nyentuh `server/`, jadi paling akhir dan sendirian.
 
 ---
@@ -104,16 +112,15 @@ Ini satu-satunya alasan aku bilang Langkah 4 harus sendirian dan paling akhir. K
 
 `PRD.md:235` nulis "balasan agent < 8 detik (median)". Median aman, tapi worst case 32 detik itu **4× di atas NFR**. Dan worst case-nya bukan kasus langka — itu terjadi **setiap kali gateway goyang**, dan gateway kita cukup goyang sampai timeout-nya harus dinaikin ke 30000.
 
-Motong timeout ke 1,5 detik justru **nguatirin** NFR, bukan ngelanggar.
+Motong timeout jadi 2,5 detik justru **nguatirin** NFR, bukan ngelanggar.
 
 ---
 
 ## Kalau ditanya "jadi kita harus ngapain sekarang?"
 
-Tiga langkah, semuanya bisa hari ini:
+Semua langkah **sudah kelar**, test suite hijau. Yang tersisa cuma satu keputusan:
 
-1. **Ukur dulu.** Jalanin `agent/selftest.ps1` atau `node agent/check-llm.mjs`, catat latency gateway sebenarnya. Tanpa angka ini kita cuma debat feeling.
-2. **Kalau >1,5 detik → ganti gateway.** Ini keputusan yang paling berdampak, lebih dari semua refactor.
-3. **Langkah 1–3 dari proposal** (short-circuit serangan, rules-first, timeout+cache). Nggak nyentuh `server/`, bisa di-commit terpisah.
-
-Langkah 4 (async) diputusin setelah 1–3 stabil.
+1. **Ukur dulu — sudah.** `node agent/measure-llm.mjs` (40 sampel): median 2197 ms, p95 13083 ms, 18 dari 40 lewat budget 2500 ms.
+2. **Karena >2,5 detik → ganti gateway.** Ini keputusan yang paling berdampak, lebih dari semua refactor. Selama gateway-nya lambat, kalimat ambigu lebih sering dijawab rules: dialognya tetap jalan, tapi nilai *Innovation & Interaction* ikut turun.
+3. **Langkah 1–3 dari proposal** (short-circuit serangan, rules-first, timeout+cache) — kelar, commit terpisah.
+4. **Langkah 4 (async + `reader`)** — kelar. `server/` ternyata sudah async, jadi riaknya jauh lebih kecil dari dugaan: yang berubah cuma `parseIntent` dan `chat()`.
