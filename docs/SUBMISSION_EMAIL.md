@@ -2,12 +2,12 @@
 
 **Ticket:** TMG-45 · **Deadline:** 20 Oct 2026, 23:59 Beijing time (22:59 WIB) · **Team target:** 12:00 WIB.
 
-Send from the team lead's address, **plain text or light HTML**, with the repository public and all four PDFs attached.
+Send from the team leader's address (farisrevan13@gmail.com, the address used for registration), **plain text or light HTML**, with the repository public and all four PDFs attached.
 
 ---
 
 **To:** fintechathon@ican-x.com
-**Subject:** `[Submission] Tameng — Topic F Agent Wallet — Universitas Diponegoro, Indonesia`
+**Subject:** `International Track Submission – Larpathon – Muhammad Faris Revansyah` (same team name and leader as the registration email)
 
 **Attachments**
 
@@ -20,7 +20,7 @@ Send from the team lead's address, **plain text or light HTML**, with the reposi
 
 Dear FinTechathon Organizing Committee,
 
-We are Team Tameng from Universitas Diponegoro, Indonesia, submitting to the International Track, Topic F: Agent Wallet.
+We are Team Larpathon from Universitas Diponegoro, Indonesia, registered for the International Track, and we are submitting our entry for Topic F: Agent Wallet.
 
 **Tameng** is a mobile AI wallet agent for cross-border remittances. It sends money autonomously on the owner's mandate — scheduled splits to family and savings, with a minimum balance — and it refuses anything outside that mandate, including prompt injection, look-alike addresses and transfers that try to originate from received messages. The rule we build on: the LLM decides what the owner wants, code decides whether it is allowed.
 
@@ -42,9 +42,11 @@ We confirm the work is our own, developed for this competition, and that all on-
 Thank you for your time and consideration.
 
 Sincerely,
-**Hizkia Yosefha Wetrawatri Sanjaya**
-Team lead, Tameng — Universitas Diponegoro, Indonesia
-`<email>` · `<phone>`
+**Muhammad Faris Revansyah**
+Team Leader, Team Larpathon, Universitas Diponegoro, Indonesia
+farisrevan13@gmail.com
+
+Team members: Muhammad Faris Revansyah (leader), Habib Mukhlis Triatmojo, Farrel Adhi Pratama, Faras Fauzan Attaqi, Hizkia Yosefha Wetrawatri Sanjaya
 
 ---
 
@@ -53,5 +55,5 @@ Team lead, Tameng — Universitas Diponegoro, Indonesia
 - [ ] GitHub repository is **public** and contains the pushed branch with `docs/` (branch `TMG-12-19-onchain-evidence` merged or visible).
 - [ ] All four files attached, names exactly `Tameng_1_TechnicalDoc.pdf` … `Tameng_4_ExecutionEvidence.pdf`.
 - [ ] Demo video link filled in (optional but recommended, TMG-44).
-- [ ] Contact phone/email filled in.
+- [x] Contact phone/email filled in.
 - [ ] Sent before **22:59 WIB** on 20 Oct 2026; keep the sent copy.
