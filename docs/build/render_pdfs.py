@@ -56,7 +56,7 @@ def render_pdf(title: str, kicker: str, body_html: str, out_name: str) -> Path:
     html_path = BUILD / (out_name.replace(".pdf", ".html"))
     pdf_path = OUT / out_name
     html = HEAD.format(title=title, kicker=kicker, css=CSS) + body_html
-    html += f'<div class="footer">Tameng · Universitas Diponegoro · 2026 Shenzhen FinTechathon · Topic F: Agent Wallet<br>Generated from {html_path.name} in the repository.</div></body></html>'
+    html += f'<div class="footer">Tameng · Team Larpathon · Universitas Diponegoro · 2026 Shenzhen FinTechathon · Topic F: Agent Wallet<br>Generated from {html_path.name} in the repository.</div></body></html>'
     html_path.write_text(html, encoding="utf-8")
     subprocess.run(
         [

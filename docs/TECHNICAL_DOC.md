@@ -1,7 +1,10 @@
 # Tameng — Technical Documentation
 
 **2026 Shenzhen International FinTech Competition (FinTechathon) — International Track, Topic F: Agent Wallet**
-Universitas Diponegoro, Indonesia
+
+Team Larpathon, Universitas Diponegoro, Indonesia
+
+Muhammad Faris Revansyah (team leader, mobile app) · Habib Mukhlis Triatmojo (policy and backend) · Farrel Adhi Pratama (on-chain) · Faras Fauzan Attaqi (agent) · Hizkia Yosefha Wetrawatri Sanjaya (documentation)
 
 Tameng is a mobile AI wallet agent that lets an Indonesian migrant worker set an auto-send
 mandate once, and then sends USDC home on schedule without the owner being online. The LLM
