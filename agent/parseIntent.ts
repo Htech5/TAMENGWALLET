@@ -1,13 +1,29 @@
 // Turns a chat message into a structured intent.
 //
-// There are two readers behind the same function: an LLM tool call when LLM_API_KEY is set,
-// and the original rule parser as a fallback when no model is configured or the call fails.
-// Both return the same ParsedIntent, so server/ never changes.
+// There are two readers behind the same function: the rule parser, which runs first and
+// answers everything it can read, and an LLM tool call, which is asked only about the
+// sentences the rules admit they could not read. Both return the same ParsedIntent, so
+// server/ never changes.
 //
 // The model only extracts what the owner asked for. It never decides whether the request is
 // allowed: limits, allowlist, confirmation thresholds, provenance and injection handling live
 // in policy/ and are applied by server/core.ts before anything is signed. Keeping those rules
 // out of the prompt means there is one source of truth, not two.
+//
+// Order of work, and why it is this order:
+//
+//   1. detectInjection() + checkProvenance()   always, and they decide first. Attack text and
+//      forwarded orders never reach the model. Their handling has to be identical on every
+//      run, so it cannot depend on a gateway being up, warm, or willing.
+//   2. parseWithRules()                        0 ms, deterministic, and it says when it is
+//      unsure (confidence: 'low') instead of silently answering "help".
+//   3. the model                               only for the sentences step 2 admitted it could
+//      not read, and only for LLM_TIMEOUT_MS.
+//
+// Before this, the model ran first on every message. A 30 s gateway timeout therefore froze
+// the whole server for 30 s per turn, including the mandate scheduler, and the attack
+// benchmark paid that cost 54 times. The model was never the slow part; running it on
+// sentences a regex already reads correctly was.
 //
 // parseIntent stays synchronous because server/core.ts calls it from synchronous handlers.
 // The LLM round trip therefore runs in a short-lived child process (spawnSync). That costs a
@@ -17,7 +33,7 @@
 //   LLM_API_KEY    enables the model (OPENAI_API_KEY is accepted as an alias)
 //   LLM_MODEL      default gpt-4o-mini
 //   LLM_BASE_URL   default https://api.openai.com/v1 (any OpenAI-compatible gateway)
-//   LLM_TIMEOUT_MS default 8000
+//   LLM_TIMEOUT_MS default 2500 — a budget that covers the gateway's p95
 //   LLM_DISABLED=1 always use the rule reader
 
 import { spawnSync } from 'node:child_process';
@@ -83,7 +99,12 @@ function llmConfig(): LlmConfig | null {
     apiKey,
     url,
     model: (process.env.LLM_MODEL || 'gpt-4o-mini').trim(),
-    timeoutMs: Number.isFinite(timeout) && timeout >= 1000 ? timeout : 8000,
+    // 2500 ms, not 8000. The model is only called for a sentence the rule reader could not
+    // read, and the budget has to cover the gateway's p95 or the fallback fires at random.
+    // Measured on the current gateway (nvidia/nemotron-3-ultra): median 1376 ms, p95 2079 ms.
+    // A gateway that cannot answer one intent extraction inside this is the thing to replace,
+    // not the timeout.
+    timeoutMs: Number.isFinite(timeout) && timeout >= 500 ? timeout : 2500,
   };
 }
 
@@ -199,6 +220,11 @@ process.stdout.write(JSON.stringify(out));
 let llmFailures = 0;
 let llmRetryAt = 0;
 let llmWarned = false;
+let llmBackoffStep = 0;
+
+// 15 s → 30 s → 60 s, instead of a flat 60 s. A gateway that recovers after ten seconds
+// should not stay invisible for a minute, which is what the old flat window did during a demo.
+const BACKOFF_MS = [15_000, 30_000, 60_000];
 
 function noteLlmFailure(err: unknown): void {
   llmFailures += 1;
@@ -209,7 +235,8 @@ function noteLlmFailure(err: unknown): void {
   }
   // A dead endpoint must not add a timeout to all 54 benchmark cases.
   if (llmFailures >= 3) {
-    llmRetryAt = Date.now() + 60_000;
+    llmRetryAt = Date.now() + BACKOFF_MS[Math.min(llmBackoffStep, BACKOFF_MS.length - 1)];
+    llmBackoffStep += 1;
     llmFailures = 0;
   }
 }
@@ -218,6 +245,7 @@ function noteLlmSuccess(): void {
   llmFailures = 0;
   llmRetryAt = 0;
   llmWarned = false;
+  llmBackoffStep = 0;
 }
 
 function asArguments(value: unknown): Record<string, unknown> {
@@ -413,7 +441,24 @@ function finalise(text: string, draft: DraftIntent, detected: string[]): ParsedI
 
 // --- Rule reader (fallback) ---------------------------------------------------
 
-function parseWithRules(text: string, injection: string[]): DraftIntent {
+type Confidence = 'high' | 'low';
+
+/**
+ * How sure the rule reader is. This is the whole reason rules can run first: 'help' is the
+ * bin every unreadable sentence lands in, and a send with no amount, no address and no name
+ * is a half-read sentence. Both are honest "I do not know" answers, so they go to the model.
+ * Anything else is a sentence the regex actually read, and a model cannot improve it.
+ *
+ * Erring towards 'low' costs one model call. Erring towards 'high' would answer a question
+ * the owner asked with a canned "I can send money to your contacts" — so when in doubt, low.
+ */
+function confidenceOf(draft: DraftIntent): Confidence {
+  if (draft.kind === 'help') return 'low';
+  if (draft.kind === 'send' && draft.amount === null && !draft.address && !draft.nameHint) return 'low';
+  return 'high';
+}
+
+function parseWithRules(text: string, injection: string[]): { draft: DraftIntent; confidence: Confidence } {
   const lower = text.toLowerCase();
   const rawAddress = text.match(ADDRESS_TOKEN)?.[0] ?? null;
 
@@ -433,21 +478,78 @@ function parseWithRules(text: string, injection: string[]): DraftIntent {
   else if (MANDATE.test(lower) && injection.length === 0) kind = 'mandate';
   else if (SEND_VERB.test(lower) || amount !== null || rawAddress || injection.length > 0) kind = 'send';
 
-  return { kind, amount, address: rawAddress, nameHint };
+  const draft: DraftIntent = { kind, amount, address: rawAddress, nameHint };
+  return { draft, confidence: confidenceOf(draft) };
 }
 
 // --- Entry point --------------------------------------------------------------
 
+export type IntentReader = 'llm' | 'rules' | 'cache';
+
+let lastReader: IntentReader = 'rules';
+
+/**
+ * Which reader answered the most recent call. For logs, the demo and the tests — never for
+ * policy. Before this existed, a silent fallback was indistinguishable from a model answer,
+ * so "the model is running" was something we claimed rather than something we could show.
+ */
+export function getLastReader(): IntentReader {
+  return lastReader;
+}
+
+// Same sentence, same answer, no second round trip. The key carries the gateway fingerprint,
+// so changing LLM_BASE_URL or LLM_MODEL never serves a stale answer from the old one.
+const CACHE_MAX = 200;
+const cache = new Map<string, ParsedIntent>();
+
+function cacheKey(text: string): string {
+  const config = llmConfig();
+  return text + '\u0000' + (config ? config.url + '|' + config.model : 'rules-only');
+}
+
+function remember(key: string, value: ParsedIntent, reader: IntentReader): ParsedIntent {
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, value);
+  lastReader = reader;
+  return { ...value };
+}
+
 export function parseIntent(message: string): ParsedIntent {
   const text = (message ?? '').trim();
   const injection = detectInjection(text).matches;
+  const key = cacheKey(text);
 
+  const hit = cache.get(key);
+  if (hit) {
+    lastReader = 'cache';
+    return { ...hit };
+  }
+
+  const { draft, confidence } = parseWithRules(text, injection);
+  const fromRules = finalise(text, draft, injection);
+
+  // Step 1: attacks and forwarded orders stop here and never reach the model. The outcome of
+  // an attack has to be the same on a healthy gateway and on a dead one, otherwise "we block
+  // prompt injection" is a claim about the gateway, not about our code.
+  if (injection.length > 0 || checkProvenance(text).blocked) {
+    return remember(key, fromRules, 'rules');
+  }
+
+  // Step 2: the rule reader is sure, so it is not guessing and there is nothing to add.
+  if (confidence === 'high') {
+    return remember(key, fromRules, 'rules');
+  }
+
+  // Step 3: only the sentences step 2 could not read, and only inside the timeout budget.
   if (text && Date.now() >= llmRetryAt && llmConfig()) {
     try {
       const parsed = parseWithLlm(text);
       if (parsed) {
         noteLlmSuccess();
-        return finalise(text, parsed, injection);
+        return remember(key, finalise(text, parsed, injection), 'llm');
       }
       noteLlmFailure(new Error('the model returned no usable tool call'));
     } catch (err) {
@@ -455,7 +557,7 @@ export function parseIntent(message: string): ParsedIntent {
     }
   }
 
-  return finalise(text, parseWithRules(text, injection), injection);
+  return remember(key, fromRules, 'rules');
 }
 
 /**
