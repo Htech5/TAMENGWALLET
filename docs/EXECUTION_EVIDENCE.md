@@ -18,4 +18,6 @@ Agent wallet address: `0x057BE625D711c504D36D2c4a59EC2f6C6B3ffdDC`
 | 10 | 2026-10-19 21:23 | chat transfer to Adik | allow | 10.00 USDC | [0xb003a367554d8e6ce7280088d743ecbc77dfd3b6d7374b271ae61a3b1f23f2a4](https://sepolia.basescan.org/tx/0xb003a367554d8e6ce7280088d743ecbc77dfd3b6d7374b271ae61a3b1f23f2a4) |
 | 11 | 2026-10-19 21:32 | chat transfer to Adik | allow | 1.00 USDC | [0x0be5c122f38a7e5d3d65f86049296a1652d48d5969293075791b6a50f803267e](https://sepolia.basescan.org/tx/0x0be5c122f38a7e5d3d65f86049296a1652d48d5969293075791b6a50f803267e) |
 
+**Note on the "Policy decision" column.** It is written by `appendEvidence()` at broadcast time and always reads `allow`, because a transfer only reaches that step once it has been allowed. Transfers above the confirm threshold (25 USDC by default), such as #1 (40 USDC to Ibu), first pass the confirm card and the owner's PIN, and the policy runs again right before signing.
+
 Blocked attempts (no tx sent) are listed in `SECURITY_REPORT.md`.
