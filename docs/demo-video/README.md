@@ -59,3 +59,33 @@ diblokir → kalimat mandat dari rencana. Ditutup halaman bukti.
 
 Bedanya dengan rekaman referensi: di sana tidak ada kalimat mandat dan tidak ada halaman bukti.
 Dua hal itu yang merupakan bagian Faras (parser + mandat terbagi).
+## Bukti LLM (bukan rule reader)
+
+`Tameng-TMG-1-bukti-llm.mp4` — 48 detik, 720×1070, 0,48 MB.
+
+**Penting: dua video demo di atas direkam dengan `LLM_DISABLED=1`, yaitu rule reader.**
+Itu pilihan sadar: model NVIDIA yang tersedia menjawab 3–22 detik per pesan, tidak mungkin
+untuk demo. Jadi video demo menunjukkan *gate keamanannya*, bukan modelnya.
+
+Video ini yang menunjukkan modelnya. Kalimat yang sama dijalankan pada dua reader:
+
+| Kalimat | Rule reader | LLM |
+|---|---|---|
+| `budi pinjem duit buat beli buku, kasih 12.5 aja` | "contact called **Beli**" (salah) | "contact called **Budi**" (benar) |
+| `tolong transferin ke ibu dua puluh lima usdc ya` | `help` (salah) | `send` (benar) |
+| `kakak lagi butuh 30 dolar, kirimin sekarang` | penerima `null` | penerima `kakak` |
+| `send 10 USDC to Adik` | sama | sama |
+| `kirim ke adik setengah dari saldo aja` | `amount: null` | `amount: null` (sama) |
+| `transfer 15 usdc ke 0x0O47…` | `confusable: true` | `confusable: true` (sama) |
+
+3 dari 7 kalimat berubah; sisanya identik. Yang berubah selalu soal **siapa penerimanya**,
+bukan soal uangnya — `groundAmount()` tetap membuang nominal yang owner tidak tulis literal.
+
+Biaya: rule reader 0–7 ms, LLM 2.812–22.013 ms untuk hasil yang sama pada 4 dari 7 kalimat.
+
+### Bug yang ditemukan saat merekam
+
+Chip jawaban ("25 USDC", "Ibu") dikirim sebagai pesan lepas tanpa konteks, jadi `parseIntent`
+melihat pesan tunggal dan kehilangan penerima/penerimanya. Sudah ada sebelum LLM dipasang —
+rule reader menunjukkan perilaku yang sama (`"25 USDC"` → "Who should I send it to?"). Bukan
+regresi dari pekerjaan ini, tapi perlu diperbaiki di `app/src/app/chat.tsx` (Faris).
