@@ -121,9 +121,15 @@ Aturan UI (copy bahasa Inggris tanpa titik dua dan tanpa em dash):
 {
   "messageId": "m-381",
   "reply": "That's above your 25 USDC confirm threshold, so I need your OK first.",
+  "reader": "rules",
   "card": { "...": "DecisionCard | ClarifyCard | MandateDraftCard | null" }
 }
 ```
+`reader` = `"llm" | "rules" | "cache"`: siapa yang menjawab pesan itu. Model hanya ditanya
+kalau rule reader tidak bisa membaca kalimatnya, jadi `reader` membuktikan apakah model
+benar-benar jalan — atau diam-diam mundur ke rules. Tidak pernah dipakai untuk keputusan
+uang; uang tetap diputuskan `policy/`.
+
 Contoh lengkap: `app/mocks/chat-confirm.json`, `chat-deny.json`, `chat-clarify.json`, `chat-allow.json`.
 
 ### POST `/confirm/:intentId`  · PIN jika `approve: true`

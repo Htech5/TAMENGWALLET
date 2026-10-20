@@ -1,6 +1,7 @@
 {
   "messageId": "m-381",
   "reply": "That's above your 25 USDC confirm threshold, so I need your OK first.",
+  "reader": "rules",
   "card": {
     "type": "decision",
     "intentId": "i-77",

@@ -1,6 +1,7 @@
 {
   "messageId": "m-385",
   "reply": "Here's the auto-send I'll set up. Confirm with your PIN to turn it on.",
+  "reader": "rules",
   "card": {
     "type": "mandate_draft",
     "intentId": "i-80",

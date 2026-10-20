@@ -179,6 +179,12 @@ const INJECTION = /(ignore|override|disable|bypass|system:|admin|forget (your|th
 const ADDRESS = /0x[0-9a-f]{4,40}/i;
 
 function chat(message: string): ChatResponse {
+  // The mock has no model, so the rule reader answers every message. The reader is added
+  // once, here, so no path can answer without saying who answered.
+  return { ...decide(message), reader: 'rules' };
+}
+
+function decide(message: string): Omit<ChatResponse, 'reader'> {
   const text = message.trim();
   const lower = text.toLowerCase();
   const messageId = nextId('m');

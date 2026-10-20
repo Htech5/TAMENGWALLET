@@ -1,6 +1,7 @@
 {
   "messageId": "m-383",
   "reply": "I can't do that. The address isn't one of your contacts and the amount is over your limits.",
+  "reader": "rules",
   "card": {
     "type": "decision",
     "intentId": "i-79",

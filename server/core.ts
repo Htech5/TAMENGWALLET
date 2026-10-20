@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseIntent } from '../agent/parseIntent.ts';
+import { parseIntent, type ParsedIntent } from '../agent/parseIntent.ts';
 import { buildMandateDraft } from '../agent/mandate.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
 import { intentCheck } from '../policy/intentCheck.ts';
@@ -428,9 +428,21 @@ export async function getWallet(): Promise<Wallet> {
 }
 
 export async function chat(message: string, declared: Provenance = 'USER'): Promise<ChatResponse> {
+  const { intent, reader } = await parseIntent(message ?? '');
+  // The reader is attached once, here, rather than on each return below: a path that
+  // forgot it would answer without saying who answered, which is the thing this field
+  // exists to prevent.
+  const answer = await decide(message, declared, intent);
+  return { ...answer, reader };
+}
+
+async function decide(
+  message: string,
+  declared: Provenance,
+  intent: ParsedIntent,
+): Promise<Omit<ChatResponse, 'reader'>> {
   await refreshBalances();
   const messageId = nextId('m');
-  const { intent } = await parseIntent(message ?? '');
   const s = state.settings;
 
   // FR-15: an order to move money found in forwarded text is never the owner speaking.

@@ -1,6 +1,7 @@
 {
   "messageId": "m-384",
   "reply": "I don't have a contact called Budi yet, and how much should I send?",
+  "reader": "rules",
   "card": {
     "type": "clarify",
     "question": "Who is Budi, and how much should I send?",

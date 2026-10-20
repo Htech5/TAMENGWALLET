@@ -61,6 +61,14 @@ test('wallet returns the shape the app reads', async () => {
   assert.equal(typeof data.unreadEvents, 'number');
 });
 
+test('the chat response says which reader answered', async () => {
+  // A fallback that is not recorded is a fallback nobody can prove. The reader travels with
+  // the answer so "the model ran" is something the response shows, not something we claim.
+  const { data } = await call('/chat', { method: 'POST', body: { message: 'send 10 usdc to Adik' } });
+  assert.equal(data.reader, 'rules', 'this sentence is read by the rule reader');
+  assert.ok(['llm', 'rules', 'cache'].includes(data.reader));
+});
+
 test('a small transfer to a contact goes straight through', async () => {
   const before = Number(state.wallet.balance);
   const { data } = await call('/chat', { method: 'POST', body: { message: 'send 10 usdc to Adik' } });
