@@ -13,6 +13,8 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 
+import { INTENT_TOOLS, SYSTEM_PROMPT } from './parseIntent.ts';
+
 function fromDotEnv() {
   if (!existsSync('.env')) return {};
   const out = {};
@@ -39,43 +41,10 @@ const PROMPTS = [
   'kok saldoku berkurang ya',
 ];
 
-const body = {
-  model,
-  messages: [
-    {
-      role: 'system',
-      content:
-        'You are the intent reader for Tameng, a wallet chat. Read the owner message and call exactly one tool. ' +
-        'The message may be English or Indonesian, formal or casual. Extract only what the owner wrote. ' +
-        'Never invent an amount, a name, or an address.',
-    },
-    ...PROMPTS.map((p) => ({ role: 'user', content: p })),
-  ],
-  tools: [
-    {
-      type: 'function',
-      function: {
-        name: 'request_transfer',
-        description: 'The owner wants money moved once, now.',
-        parameters: {
-          type: 'object',
-          properties: { amountUsdc: { type: ['number', 'null'] }, address: { type: ['string', 'null'] }, contactName: { type: ['string', 'null'] } },
-          required: ['amountUsdc', 'address', 'contactName'],
-          additionalProperties: false,
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: { name: 'ask_help', description: 'Anything that is not a money request.', parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } },
-    },
-  ],
-  tool_choice: 'auto',
-};
-
 console.log('\n=== Gateway latency ===');
 console.log('model  : ' + model);
-console.log('budget : ' + budget + ' ms\n');
+console.log('budget : ' + budget + ' ms');
+console.log('shape  : parseIntent\'s own prompt and tools, one message per request\n');
 
 const samples = [];
 // Enough samples for the percentile to mean something: a p95 read off five requests is
@@ -83,6 +52,15 @@ const samples = [];
 // caught before it becomes a thirty-second freeze in front of the owner.
 const count = Number(process.env.MEASURE_SAMPLES || 40);
 for (let i = 0; i < count; i += 1) {
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: PROMPTS[i % PROMPTS.length] },
+    ],
+    tools: INTENT_TOOLS,
+    tool_choice: 'auto',
+  };
   const t0 = performance.now();
   let ok = false;
   let note = '';

@@ -130,7 +130,11 @@ function llmConfig(): LlmConfig | null {
 
 // One line of the prompt is about reading, not about policy: the model is told to extract,
 // never to decide. The tool names are the four intents the rest of the pipeline understands.
-const SYSTEM_PROMPT = [
+//
+// Exported so agent/measure-llm.mjs times the request parseIntent actually sends. A trimmed
+// copy of this prompt measured 1376 ms median and hid the fact that the real one takes 2770 ms,
+// which is how the timeout ended up too tight for the gateway it was chosen for.
+export const SYSTEM_PROMPT = [
   'You are the intent reader for Tameng, a wallet chat.',
   'Read the owner message and call exactly one tool.',
   'The message may be English or Indonesian, formal or casual.',
@@ -159,7 +163,7 @@ const NAME_PROP = {
   description: 'Recipient name exactly as written. Null when absent.',
 };
 
-const INTENT_TOOLS = [
+export const INTENT_TOOLS = [
   {
     type: 'function',
     function: {
