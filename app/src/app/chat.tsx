@@ -24,6 +24,10 @@ export default function Chat() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const scroll = useRef<ScrollView>(null);
   const autoSent = useRef(false);
+  // Ids of messages whose last attempt failed, so a retry reuses the id and the server
+  // recognises it instead of sending the money a second time.
+  const failed = useRef<Map<string, string>>(new Map());
+  const nextId = useRef(0);
   // Android edge-to-edge no longer resizes the window, so the composer is lifted by padding on both platforms.
   const kbOpen = useKeyboardOpen(() => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 50));
 
@@ -35,13 +39,21 @@ export default function Chat() {
     const message = raw.trim();
     if (!message || busy) return;
     setText('');
-    const id = `u-${Date.now()}`;
+    // The id identifies this message, not this attempt. A retry after a network error
+    // carries the same id, so the server recognises it and the money moves once. A message
+    // that succeeded gets a fresh id when it is sent again on purpose, so the owner can
+    // really send the same thing twice.
+    const retryOf = failed.current.get(message);
+    const id = retryOf ?? `u-${Date.now()}-${nextId.current++}`;
+    failed.current.delete(message);
     chatStore.add({ id, from: 'me', text: message, at: Date.now() });
     setBusy(true);
     try {
       const res = await api.chat(message, id);
       chatStore.add({ id: res.messageId, from: 'tam', text: res.reply, card: res.card, at: Date.now() });
     } catch (e) {
+      // Remember the id for this text, so a retry of the same words reuses it.
+      failed.current.set(message, id);
       chatStore.update(id, { failed: true });
       chatStore.add({
         id: `err-${Date.now()}`,

@@ -10,12 +10,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseIntent } from '../agent/parseIntent.ts';
+import { parseIntent, type ParsedIntent } from '../agent/parseIntent.ts';
+import { buildMandateDraft } from '../agent/mandate.ts';
 import { checkPolicy } from '../policy/checkPolicy.ts';
 import { intentCheck } from '../policy/intentCheck.ts';
 import { checkLimits, clampConfig } from '../policy/permissions.ts';
 import { findLookalike, type KnownAddress } from '../policy/lookalike.ts';
 import { checkProvenance, type Provenance } from '../policy/provenance.ts';
+import { isQuestion } from '../policy/question.ts';
 import type { PolicyConfig, PolicyResult, TxIntent } from '../policy/types.ts';
 import { decodeTx } from '../onchain/decodeTx.ts';
 import * as chain from '../onchain/sendUsdc.ts';
@@ -427,9 +429,26 @@ export async function getWallet(): Promise<Wallet> {
 }
 
 export async function chat(message: string, declared: Provenance = 'USER'): Promise<ChatResponse> {
+  // The declared provenance goes into the intent reader too, so text the caller marked
+  // EXTERNAL never reaches the model — not only text that looks forwarded on its own.
+  const { intent, reader } = await parseIntent(message ?? '', declared);
+  // The reader is attached once, here, rather than on each return below: a path that
+  // forgot it would answer without saying who answered, which is the thing this field
+  // exists to prevent.
+  const answer = await decide(message, declared, intent);
+  // Logged when the model was actually consulted, so "the model is running" can be seen on a
+  // live server without a debugger.
+  if (reader === 'llm' || reader === 'cache') console.log('[tameng] reader=' + reader + ' kind=' + intent.kind);
+  return { ...answer, reader };
+}
+
+async function decide(
+  message: string,
+  declared: Provenance,
+  intent: ParsedIntent,
+): Promise<Omit<ChatResponse, 'reader'>> {
   await refreshBalances();
   const messageId = nextId('m');
-  const intent = parseIntent(message ?? '');
   const s = state.settings;
 
   // FR-15: an order to move money found in forwarded text is never the owner speaking.
@@ -451,9 +470,28 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
   }
 
   if (intent.kind === 'mandate') {
+    // The draft is read from the owner's own sentence; the template only supplies the shape.
+    // Filling in its numbers would invent money the owner never asked to send, and a draft
+    // can be confirmed with a PIN. When a piece is missing, ask instead of guessing.
+    const draft = buildMandateDraft(intent.text, byName);
+    if (!draft.ok) {
+      return {
+        messageId,
+        reply: draft.question,
+        card: { type: 'clarify', question: draft.question },
+      };
+    }
+
     const card = clone(DRAFT_TEMPLATE.card) as MandateDraftCard;
     card.intentId = nextId('i');
     card.expiresAt = new Date(Date.now() + INTENT_TTL_MS).toISOString();
+    card.summary = draft.summary;
+    card.mandate = {
+      label: draft.label,
+      recipients: draft.recipients.map((r) => ({ contactId: r.contactId, amount: r.amount })),
+      schedule: draft.schedule,
+      minBalance: draft.minBalance,
+    };
     state.intents[card.intentId] = card;
     save();
     return { messageId, reply: DRAFT_TEMPLATE.reply, card };
@@ -478,6 +516,18 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
 
   if (provenance.blocked)
     reasons.push({ code: 'EXTERNAL_PROVENANCE', message: provenance.message });
+
+  // A question asks; it does not instruct. "Can you send 10 USDC to Adik?" names a verb, an
+  // amount and a recipient, so every reader reads it as a transfer — and under the confirm
+  // threshold that transfer is silent. The money must not move on a question alone.
+  //
+  // It is answered with a confirmation card rather than a canned reply: the owner still gets
+  // what they asked about, and a PIN is still needed before anything moves. That also keeps
+  // "Bisa kirim 10 USDC ke Adik?" — the ordinary way to ask in Indonesian — working.
+  //
+  // This check comes after the injection and provenance checks on purpose: a question-shaped
+  // attack still has to reach the deny path, where it is logged.
+  const asked = isQuestion(intent.text);
 
   if (intent.address && !known) {
     // A confusably typed address folds onto a real contact, which is exactly the trap:
@@ -569,7 +619,7 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
   const verdict = gate(target.address, amount);
   const savedUsd = fmt(amount * BENCHMARK_PCT - n(NETWORK_FEE_USD));
 
-  if (verdict.decision === 'confirm') {
+  if (verdict.decision === 'confirm' || asked) {
     const card: DecisionCard = {
       type: 'decision',
       intentId: nextId('i'),
@@ -581,7 +631,15 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
       recipient: toRecipient(target),
       networkFeeUsd: NETWORK_FEE_USD,
       savedVsBenchmarkUsd: savedUsd,
-      reasons: verdict.reasons.map((r) => toReason(r, amount, target.addressShort)),
+      reasons: asked
+        ? [
+            {
+              code: 'QUESTION_NEEDS_CONFIRMATION',
+              message:
+                'That sounded like a question, so I need your OK before I move any money.',
+            },
+          ]
+        : verdict.reasons.map((r) => toReason(r, amount, target.addressShort)),
       expiresAt: new Date(Date.now() + INTENT_TTL_MS).toISOString(),
       tx: null,
     };
@@ -589,7 +647,9 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
     save();
     return {
       messageId,
-      reply: "That's above your " + s.confirmAbove + ' USDC confirm threshold, so I need your OK first.',
+      reply: asked
+        ? 'That reads like a question, so I have not sent anything. Confirm and I will.'
+        : "That's above your " + s.confirmAbove + ' USDC confirm threshold, so I need your OK first.',
       card,
     };
   }

@@ -94,3 +94,15 @@ export function checkProvenance(message: string, declared: Provenance = "USER"):
     message: "That instruction came from a forwarded message, not from you.",
   };
 }
+
+/**
+ * Does this message contain anything the caller marked EXTERNAL?
+ *
+ * checkProvenance() answers a narrower question: is there an order to move money in here?
+ * This one is asked by the intent reader, which asks "is any of this the owner speaking?".
+ * The answer is no as soon as one word came from somewhere else — a forwarded message, a
+ * pasted email, a tool result — whatever it happens to say.
+ */
+export function hasExternalContent(message: string, declared: Provenance = "USER"): boolean {
+  return labelSegments(message, declared).some((s) => s.provenance === "EXTERNAL");
+}

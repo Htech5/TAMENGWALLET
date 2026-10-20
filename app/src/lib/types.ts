@@ -16,6 +16,7 @@ export type ReasonCode =
   | 'WITHIN_LIMITS'
   | 'ABOVE_CONFIRM_THRESHOLD'
   | 'APPROVAL_REQUIRED'
+  | 'QUESTION_NEEDS_CONFIRMATION'
   | 'NOT_IN_ALLOWLIST'
   | 'LOOKALIKE_ADDRESS'
   | 'INTENT_MISMATCH'
@@ -85,10 +86,17 @@ export interface MandateDraftCard {
 
 export type Card = DecisionCard | ClarifyCard | MandateDraftCard;
 
+/**
+ * Which reader answered the message: the model, the rule reader, or the cache. A fallback
+ * that is not recorded is a fallback nobody can prove, so the response carries it.
+ */
+export type IntentReader = 'llm' | 'rules' | 'cache';
+
 export interface ChatResponse {
   messageId: string;
   reply: string;
   card: Card | null;
+  reader: IntentReader;
 }
 
 export type ConfirmStatus = 'executed' | 'rejected' | 'denied' | 'expired';

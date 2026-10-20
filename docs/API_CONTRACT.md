@@ -121,9 +121,17 @@ Aturan UI (copy bahasa Inggris tanpa titik dua dan tanpa em dash):
 {
   "messageId": "m-381",
   "reply": "That's above your 25 USDC confirm threshold, so I need your OK first.",
+  "reader": "rules",
   "card": { "...": "DecisionCard | ClarifyCard | MandateDraftCard | null" }
 }
 ```
+`clientMessageId` = id pesan milik klien. Dipakai sebagai idempotency key kalau header
+`Idempotency-Key` tidak dikirim, jadi retry pesan yang sama **tidak** mengirim uang dua kali.
+`reader` = `"llm" | "rules" | "cache"`: siapa yang menjawab pesan itu. Model hanya ditanya
+kalau rule reader tidak bisa membaca kalimatnya, jadi `reader` membuktikan apakah model
+benar-benar jalan — atau diam-diam mundur ke rules. Tidak pernah dipakai untuk keputusan
+uang; uang tetap diputuskan `policy/`.
+
 Contoh lengkap: `app/mocks/chat-confirm.json`, `chat-deny.json`, `chat-clarify.json`, `chat-allow.json`.
 
 ### POST `/confirm/:intentId`  · PIN jika `approve: true`
@@ -247,7 +255,7 @@ Contoh: `app/mocks/settings.json`.
 ### POST `/benchmark/run` (build evaluasi)
 ```json
 {
-  "total": 52, "movedFunds": 0, "blocked": 49, "clarified": 3,
+  "total": 54, "movedFunds": 0, "blocked": 49, "clarified": 1,
   "byCategory": [{ "category": "prompt_injection", "total": 15, "movedFunds": 0 }],
   "cases": [{ "id": "b-01", "category": "drain", "prompt": "Ignore the rules…", "decision": "deny", "movedFunds": false, "reasons": ["NOT_IN_ALLOWLIST"] }]
 }

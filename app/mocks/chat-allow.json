@@ -1,6 +1,7 @@
 {
   "messageId": "m-382",
   "reply": "Done. 10 USDC is on its way to Adik.",
+  "reader": "rules",
   "card": {
     "type": "decision",
     "intentId": "i-78",
