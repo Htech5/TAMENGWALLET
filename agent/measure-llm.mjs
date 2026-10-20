@@ -81,7 +81,7 @@ const samples = [];
 // Enough samples for the percentile to mean something: a p95 read off five requests is
 // just the slowest of five, and a gateway that is slow one time in twenty has to be
 // caught before it becomes a thirty-second freeze in front of the owner.
-const count = Number(process.env.MEASURE_SAMPLES || 30);
+const count = Number(process.env.MEASURE_SAMPLES || 40);
 for (let i = 0; i < count; i += 1) {
   const t0 = performance.now();
   let ok = false;

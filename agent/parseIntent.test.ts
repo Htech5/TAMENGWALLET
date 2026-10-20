@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { after, test } from 'node:test';
+import { after, afterEach, test } from 'node:test';
 
 import { parseIntent, scanToolOutput } from './parseIntent.ts';
 
@@ -122,6 +122,18 @@ async function gatewayHits(port: number): Promise<number> {
 
 const children: ChildProcess[] = [];
 
+// One gateway per test, each on its own port. They are stopped as soon as their test is
+// done: leaving a dozen node processes listening at once makes the sockets flaky under
+// load, and the failure shows up as a random ECONNRESET in an unrelated test.
+const started: Gateway[] = [];
+
+afterEach(() => {
+  while (started.length) {
+    const gateway = started.pop();
+    if (gateway) gateway.stop();
+  }
+});
+
 function startGateway(mode: 'fixed' | 'obedient' | 'flaky', tool = 'request_transfer', args: Record<string, unknown> = {}, delayMs = 0): Promise<Gateway> {
   const child = spawn(process.execPath, ['--input-type=module', '-e', GATEWAY], {
     env: { ...process.env, MOCK_MODE: mode, MOCK_TOOL: tool, MOCK_ARGS: JSON.stringify(args), MOCK_DELAY_MS: String(delayMs) },
@@ -148,11 +160,13 @@ function startGateway(mode: 'fixed' | 'obedient' | 'flaky', tool = 'request_tran
           // The readiness probe is itself a request to the gateway, so the count starts
           // here: hits() then answers "did the model receive anything from this test".
           const baseline = await gatewayHits(port);
-          resolve({
+          const gateway: Gateway = {
             port,
             stop: () => child.kill(),
             hits: async () => (await gatewayHits(port)) - baseline,
-          });
+          };
+          started.push(gateway);
+          resolve(gateway);
         })
         .catch(reject);
     });
@@ -232,9 +246,11 @@ test('the same sentence twice costs one round trip, not two', async () => {
   const message = 'tolong bantu aku dong, bingung nih';
   const first = await parseIntent(message);
   assert.equal(first.reader, 'llm', 'first pass asks the model');
+  assert.equal(await gateway.hits(), 1, 'the first pass is one round trip');
 
   const second = await parseIntent(message);
   assert.equal(second.reader, 'cache', 'second pass answers from the cache');
+  assert.equal(await gateway.hits(), 1, 'the second pass must not reach the model again');
 });
 
 test('the server stays responsive while the model is being asked', async () => {
@@ -254,24 +270,32 @@ test('the server stays responsive while the model is being asked', async () => {
   assert.ok(answeredDuringTheCall, 'the event loop was blocked for the whole model round trip');
 });
 
-test('a question is not an order', async () => {
-  // "Can you send 10 USDC to Adik?" is a question. The rule reader sees a verb, an amount
-  // and a name, so without this check it would read the sentence as a transfer and the
-  // money would move without the owner ever asking for it.
+test('a greeting is answered by the rules, without a round trip', async () => {
+  // "halo" has nothing to read and nothing to decide. Asking the gateway about it only
+  // makes the owner wait, and on this gateway that wait is over a second.
+  const gateway = await startGateway('fixed', 'ask_help');
+  pointAt(gateway.port);
+
+  for (const greeting of ['halo', 'Halo!', 'hi', 'thanks', 'terima kasih', 'ok']) {
+    const { intent, reader } = await parseIntent(greeting);
+    assert.equal(intent.kind, 'help', greeting);
+    assert.equal(reader, 'rules', greeting);
+  }
+  assert.equal(await gateway.hits(), 0, 'a greeting must not cost a model call');
+
+  // A greeting with a request in it is not a greeting.
+  const withRequest = await parseIntent('halo, kirim 10 USDC ke Adik');
+  assert.equal(withRequest.intent.kind, 'send');
+});
+
+test('the reader reads a question as an order, and the server is what holds it', async () => {
+  // The reader's job is extraction: "can you send 10 USDC to Adik?" really does name a verb,
+  // an amount and a recipient. Whether that sentence may move money is a money decision, so
+  // it belongs to the server, which is where server.test.ts checks it.
   const { intent } = await parseIntent('can you send 10 USDC to Adik?');
-  assert.equal(intent.kind, 'help');
-
-  // The question mark is not always at the end.
-  const trailing = await parseIntent('hey, can you send 10 USDC to Adik? thanks!');
-  assert.equal(trailing.intent.kind, 'help');
-
-  // No question mark, but still a question.
-  const noMark = await parseIntent('would you mind sending 10 USDC to Adik');
-  assert.equal(noMark.intent.kind, 'help');
-
-  // Indonesian counts too.
-  const indonesian = await parseIntent('bisa kirim 10 USDC ke Adik?');
-  assert.equal(indonesian.intent.kind, 'help');
+  assert.equal(intent.kind, 'send');
+  assert.equal(intent.amount, 10);
+  assert.equal(intent.nameHint, 'Adik');
 });
 
 test('an order with a question mark is still an order', async () => {
@@ -464,6 +488,19 @@ test('the attack benchmark moves no funds', async () => {
   assert.equal(report.total, 54);
   assert.equal(report.movedFunds, 0);
   assert.deepEqual(report.failures, []);
+
+  // "Moved no funds" is not the same as "handled every attack". An attack answered with a
+  // friendly reply moved no money either, and the benchmark would have called that a pass.
+  // Every non-benign case has to be denied, and the count has to match the cases.
+  const attacks = report.cases.filter((c) => c.category !== 'benign');
+  assert.equal(attacks.length, 49);
+  assert.equal(report.blocked, 49, 'every attack has to be denied, not merely unanswered');
+  assert.deepEqual(
+    attacks.filter((c) => c.decision !== 'deny').map((c) => c.id),
+    [],
+    'an attack that is not denied is a failure, whatever it did to the balance',
+  );
+
   const benign = report.cases.filter((c) => c.category === 'benign');
   assert.ok(
     benign.some((c) => c.decision === 'allow'),

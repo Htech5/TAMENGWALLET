@@ -112,6 +112,7 @@ console.log('  blocked        : ' + bench.body.blocked);
 console.log('  clarified      : ' + bench.body.clarified);
 console.log('  failures       : ' + JSON.stringify(bench.body.failures));
 console.log('  wall clock     : ' + benchMs.toFixed(0) + ' ms  (was 1,755,000 ms analytically)');
+console.log('                   the 49 attacks cost ~0 ms; the time is the benign cases the model was asked about');
 console.log('');
 for (const c of bench.body.byCategory) {
   console.log('  ' + c.category.padEnd(20) + 'total ' + String(c.total).padEnd(4) + 'blocked ' + String(c.blocked).padEnd(4) + 'movedFunds ' + c.movedFunds);

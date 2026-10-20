@@ -77,26 +77,40 @@ function corsHeaders(): Record<string, string> {
 /** Same Idempotency-Key, same answer: a retried POST never sends money twice. */
 const inFlight = new Map<string, Promise<unknown>>();
 
-async function idempotent<T>(key: string | undefined, run: () => T | Promise<T>): Promise<T> {
+/**
+ * One key space for every endpoint, so the key has to say which endpoint it belongs to.
+ * Without the prefix a chat key that happens to equal a confirm key would return the
+ * chat's answer for the confirm — the wrong payload, for the wrong request.
+ */
+function namespacedKey(scope: string, key: string): string {
+  return scope + ':' + key;
+}
+
+async function idempotent<T>(
+  scope: string,
+  key: string | undefined,
+  run: () => T | Promise<T>,
+): Promise<T> {
   if (!key) return run();
-  const cached = state.idempotency[key];
+  const namespaced = namespacedKey(scope, key);
+  const cached = state.idempotency[namespaced];
   if (cached !== undefined) return cached as T;
-  const already = inFlight.get(key);
+  const already = inFlight.get(namespaced);
   if (already) return already as Promise<T>;
 
   const next = (async () => {
     const result = await run();
-    state.idempotency[key] = result ?? null;
+    state.idempotency[namespaced] = result ?? null;
     const keys = Object.keys(state.idempotency);
     if (keys.length > 500) delete state.idempotency[keys[0]];
     save();
     return result;
   })();
-  inFlight.set(key, next);
+  inFlight.set(namespaced, next);
   try {
     return await next;
   } finally {
-    inFlight.delete(key);
+    inFlight.delete(namespaced);
   }
 }
 
@@ -127,13 +141,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // idempotency key when no header was sent: an app that retries the same message must
     // not move the money twice. The header still wins, for callers that manage their own keys.
     const clientId = typeof body.clientMessageId === 'string' ? body.clientMessageId.trim() : '';
-    return send(res, 200, await idempotent(key || clientId || undefined, () => core.chat(message, declared)));
+    return send(res, 200, await idempotent('chat', key || clientId || undefined, () => core.chat(message, declared)));
   }
 
   // /confirm/:intentId
   if (seg[0] === 'confirm' && seg.length === 2 && method === 'POST') {
     const approve = body.approve !== false;
-    return send(res, 200, await idempotent(key, () => core.confirm(decodeURIComponent(seg[1]), approve, pin)));
+    return send(res, 200, await idempotent('confirm', key, () => core.confirm(decodeURIComponent(seg[1]), approve, pin)));
   }
 
   // /activity
@@ -149,7 +163,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (path === '/mandates' && method === 'GET') return send(res, 200, core.getMandates());
   if (path === '/mandates' && method === 'POST') {
     core.checkPin(pin);
-    return send(res, 200, await idempotent(key, () => core.createMandate(body as never)));
+    return send(res, 200, await idempotent('mandate', key, () => core.createMandate(body as never)));
   }
   if (seg[0] === 'mandates' && seg.length === 2) {
     const id = decodeURIComponent(seg[1]);
@@ -168,7 +182,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (path === '/contacts' && method === 'GET') return send(res, 200, core.getContacts());
   if (path === '/contacts' && method === 'POST') {
     core.checkPin(pin);
-    return send(res, 200, await idempotent(key, () => core.addContact(String(body.name ?? ''), String(body.address ?? ''))));
+    return send(res, 200, await idempotent('contact', key, () => core.addContact(String(body.name ?? ''), String(body.address ?? ''))));
   }
   if (seg[0] === 'contacts' && seg.length === 2 && method === 'DELETE') {
     core.checkPin(pin);

@@ -17,6 +17,7 @@ import { intentCheck } from '../policy/intentCheck.ts';
 import { checkLimits, clampConfig } from '../policy/permissions.ts';
 import { findLookalike, type KnownAddress } from '../policy/lookalike.ts';
 import { checkProvenance, type Provenance } from '../policy/provenance.ts';
+import { isQuestion } from '../policy/question.ts';
 import type { PolicyConfig, PolicyResult, TxIntent } from '../policy/types.ts';
 import { decodeTx } from '../onchain/decodeTx.ts';
 import * as chain from '../onchain/sendUsdc.ts';
@@ -436,7 +437,7 @@ export async function chat(message: string, declared: Provenance = 'USER'): Prom
   // exists to prevent.
   const answer = await decide(message, declared, intent);
   // Logged when the model was actually consulted, so "the model is running" can be seen on a
-  // live server without a debugger — and so a turn that fell back to the rules is visible too.
+  // live server without a debugger.
   if (reader === 'llm' || reader === 'cache') console.log('[tameng] reader=' + reader + ' kind=' + intent.kind);
   return { ...answer, reader };
 }
@@ -515,6 +516,18 @@ async function decide(
 
   if (provenance.blocked)
     reasons.push({ code: 'EXTERNAL_PROVENANCE', message: provenance.message });
+
+  // A question asks; it does not instruct. "Can you send 10 USDC to Adik?" names a verb, an
+  // amount and a recipient, so every reader reads it as a transfer — and under the confirm
+  // threshold that transfer is silent. The money must not move on a question alone.
+  //
+  // It is answered with a confirmation card rather than a canned reply: the owner still gets
+  // what they asked about, and a PIN is still needed before anything moves. That also keeps
+  // "Bisa kirim 10 USDC ke Adik?" — the ordinary way to ask in Indonesian — working.
+  //
+  // This check comes after the injection and provenance checks on purpose: a question-shaped
+  // attack still has to reach the deny path, where it is logged.
+  const asked = isQuestion(intent.text);
 
   if (intent.address && !known) {
     // A confusably typed address folds onto a real contact, which is exactly the trap:
@@ -606,7 +619,7 @@ async function decide(
   const verdict = gate(target.address, amount);
   const savedUsd = fmt(amount * BENCHMARK_PCT - n(NETWORK_FEE_USD));
 
-  if (verdict.decision === 'confirm') {
+  if (verdict.decision === 'confirm' || asked) {
     const card: DecisionCard = {
       type: 'decision',
       intentId: nextId('i'),
@@ -618,7 +631,15 @@ async function decide(
       recipient: toRecipient(target),
       networkFeeUsd: NETWORK_FEE_USD,
       savedVsBenchmarkUsd: savedUsd,
-      reasons: verdict.reasons.map((r) => toReason(r, amount, target.addressShort)),
+      reasons: asked
+        ? [
+            {
+              code: 'QUESTION_NEEDS_CONFIRMATION',
+              message:
+                'That sounded like a question, so I need your OK before I move any money.',
+            },
+          ]
+        : verdict.reasons.map((r) => toReason(r, amount, target.addressShort)),
       expiresAt: new Date(Date.now() + INTENT_TTL_MS).toISOString(),
       tx: null,
     };
@@ -626,7 +647,9 @@ async function decide(
     save();
     return {
       messageId,
-      reply: "That's above your " + s.confirmAbove + ' USDC confirm threshold, so I need your OK first.',
+      reply: asked
+        ? 'That reads like a question, so I have not sent anything. Confirm and I will.'
+        : "That's above your " + s.confirmAbove + ' USDC confirm threshold, so I need your OK first.',
       card,
     };
   }

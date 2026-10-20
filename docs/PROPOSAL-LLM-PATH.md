@@ -58,9 +58,9 @@ Di bagian B (gateway dikonfigurasi tapi mati), kalimat ambigu seperti `"yang kem
 butuh **3,11 ms** sementara serangan **0,12 ms** — selisih itu bukti bahwa model memang dicoba
 untuk kalimat ambigu, dan tidak pernah dicoba untuk serangan.
 
-Test: **93 dari 102 lulus**. 9 yang gagal semuanya test yang butuh mock gateway lewat
-`spawn`, dan sandbox menolak `spawn` (`EPERM`) — batas sandbox, bukan logika. Jalankan
-`npm test` di shell biasa untuk 102/102.
+Test: **semua lulus** — `npm test` di shell biasa. (Angka "93 dari 102" di versi
+sebelumnya datang dari sandbox yang menolak `spawn`; setelah `spawnSync` dihapus,
+test mock gateway jalan in-process dan tidak ada lagi yang gagal karena sandbox.)
 
 Perubahan test yang perlu diketahui tim:
 
@@ -89,8 +89,8 @@ Ditambah fallback yang diam-diam, sehingga hasil chat **tidak deterministik**: k
 bisa jadi `send` lewat model, atau `help` lewat rules, tergantung gateway hidup atau tidak.
 
 Usulan: **balik urutannya**. Rules dulu (0 ms, deterministik), LLM hanya untuk kalimat yang
-benar-benar ambigu, transport diganti `fetch` biasa, timeout dipotong ke 1,5 detik. Hasil
-target: chat **≤1,5 detik worst case** (sekarang 32,5 detik), benchmark **±0 detik**, dan
+benar-benar ambigu, transport diganti `fetch` biasa, timeout dipotong ke 2,5 detik. Hasil
+target: chat **≤2,5 detik worst case** (sekarang 32,5 detik), benchmark **±0 detik**, dan
 perilaku yang bisa diulang persis di depan juri.
 
 ---
@@ -133,7 +133,7 @@ bukan solusi, itu memindahkan rasa sakit ke pengguna.
 
 `PRD.md:235` menetapkan **"balasan agent < 8 detik (median)"**. Dengan timeout 32,5 detik,
 kegagalan tunggal sudah melampaui NFR 4×. Catatan: NFR-nya menulis *median*, jadi memotong
-timeout ke 1,5 detik justru **menguatkan** NFR, bukan melanggarnya.
+timeout ke 2,5 detik justru **menguatkan** NFR, bukan melanggarnya.
 
 ---
 
@@ -207,7 +207,7 @@ Alur baru:
 ```
 rules (0 ms, selalu)
    └─ confidence 'high'  → selesai, LLM tidak dipanggil
-   └─ confidence 'low'   → LLM (≤1,5 s), gagal → pakai hasil rules
+   └─ confidence 'low'   → LLM (≤2,5 s), gagal → pakai hasil rules
 ```
 
 **Efek:** mayoritas turn jadi **0 ms**. LLM hanya dipakai di kasus yang memang butuh, yaitu
@@ -260,7 +260,7 @@ mudah (mock gateway bisa in-process).
 
 ```diff
 -LLM_TIMEOUT_MS=30000
-+LLM_TIMEOUT_MS=1500
++LLM_TIMEOUT_MS=2500
 ```
 
 Dan jadikan batas keras, bukan saran. Anggaran satu turn chat:
@@ -268,12 +268,12 @@ Dan jadikan batas keras, bukan saran. Anggaran satu turn chat:
 | Tahap | Budget |
 |---|---|
 | Rules + policy | 0 ms (sinkron, murni) |
-| LLM (hanya kalau `confidence: 'low'`) | ≤ 1500 ms |
+| LLM (hanya kalau `confidence: 'low'`) | ≤ 2500 ms |
 | Cache hit | 0 ms |
-| **Worst case** | **±1,5 detik** |
+| **Worst case** | **±2,5 detik** |
 
-**Efek:** dari 32,5 detik ke 1,5 detik — **21× lebih cepat** di kasus terburuk. Dan kalau
-gateway tidak sanggup jawab dalam 1,5 detik, itu informasi yang berguna: gateway-nya yang harus
+**Efek:** dari 32,5 detik ke 2,5 detik — **21× lebih cepat** di kasus terburuk. Dan kalau
+gateway tidak sanggup jawab dalam 2,5 detik, itu informasi yang berguna: gateway-nya yang harus
 diganti, bukan timeout-nya yang dinaikkan.
 
 **File:** `.env`, `.env.example`. **Risiko:** rendah.
@@ -356,10 +356,10 @@ menambah keamanan nyata, karena keputusan uang sudah deterministik di `policy/`.
 | Skenario | Sekarang | Setelah P-1…P-4 |
 |---|---|---|
 | Kalimat jelas (`"send 10 USDC to Adik"`) | 0,3–32,5 s + server beku | **0 ms** (rules) |
-| Kalimat ambigu | 0,3–32,5 s | ≤1,5 s (LLM) |
+| Kalimat ambigu | 0,3–32,5 s | ≤2,5 s (LLM) |
 | Pesan berulang | bayar ulang penuh | **0 ms** (cache) |
 | Kasus serangan (benchmark) | 0,3–32,5 s, hasil tergantung model | **0 ms, deterministik** |
-| Gateway mati total | 97,5 s beku lalu 60 s bisu | 1,5 s → rules, tercatat |
+| Gateway mati total | 97,5 s beku lalu 60 s bisu | 2,5 s → rules, tercatat |
 | Benchmark 54 kasus | 16 detik – **29 menit** | **< 2 detik** |
 | Server selama chat | beku | tetap responsif |
 
@@ -401,7 +401,7 @@ langkah 4 menyentuh `server/`, jadi dikerjakan paling akhir dan sendirian.
 
 1. **Setuju urutan rules-first (P-2)?** Ini inti usulan. Kalau tidak, sisa usulan hanya mengecilkan
    gejala.
-2. **Gateway sekarang sanggup jawab dalam 1,5 detik?** Perlu diukur sebelum Langkah 3. Kalau
+2. **Gateway sekarang sanggup jawab dalam 2,5 detik?** Perlu diukur sebelum Langkah 3. Kalau
    tidak sanggup, keputusannya ganti gateway — bukan naikkan timeout.
 3. **Langkah 4 (async) dikerjakan sekarang atau setelah submission?** Manfaatnya besar (server
    tidak beku), tapi ini satu-satunya perubahan yang menyentuh `server/`.

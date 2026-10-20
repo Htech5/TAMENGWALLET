@@ -98,9 +98,11 @@ Langkah 1–3 cuma `agent/parseIntent.ts` dan `.env`. Bisa hari ini, bisa di-com
 
 ### "Langkah 4 emang kenapa berisiko?"
 
-Karena `chat()` sekarang sinkron, dan `idempotent()` di `server/index.ts:77` nyimpen **hasil**, bukan promise. Begitu `chat()` jadi async, dua request dengan `Idempotency-Key` sama bisa **balapan** dan ngirim uang **dua kali**.
+Karena `chat()` berubah async, dan kalau `idempotent()` di `server/index.ts` nyimpen **hasil**, bukan promise, dua request dengan `Idempotency-Key` sama bisa **balapan** dan ngirim uang **dua kali**.
 
-Ini satu-satunya alasan aku bilang Langkah 4 harus sendirian dan paling akhir. Kalau dikerjain sambil buru-buru, kita bisa kehilangan uang beneran — di wallet yang justru jualannya "nggak bisa dibelokkan".
+Setelah dicek, `idempotent()` ternyata **sudah** nyimpen promise-nya lewat peta `inFlight` — jadi risiko itu ternyata nggak ada, dan Langkah 4 jauh lebih kecil dari dugaan: yang berubah cuma `parseIntent` jadi async dan `fetch` ganti `spawnSync`. Tapi **testnya tetap wajib ada**, karena itu yang membuat klaim "ngirim uang dua kali" bisa dibuktikan, bukan cuma Hopefully.
+
+Test yang sekarang ada: dua POST `/chat` dengan key sama yang datang **bersamaan** → uang pindah **satu kali**; dua key berbeda → dua transfer. Dan `clientMessageId` milik app sekarang dipakai sebagai idempotency key, jadi retry setelah error jaringan tidak mengirim uang dua kali.
 
 ### "Gimana kalau kita cuma naikin timeout aja / matiin LLM aja?"
 
