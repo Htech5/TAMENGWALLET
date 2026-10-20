@@ -169,6 +169,11 @@ test('a contact an active auto-send uses cannot be deleted', async () => {
 test('the scheduler runs a due auto-send and books the next one', async () => {
   const m = state.mandates.find((x) => x.id === 'md-1');
   assert.ok(m);
+  // The seed data carries absolute dates, and md-2's slot eventually falls in the past.
+  // This test asserts which mandates ran, so it owns the schedule it asserts on.
+  for (const other of state.mandates) {
+    if (other.id !== 'md-1') other.nextRunAt = new Date(Date.now() + 86_400_000).toISOString();
+  }
   m.nextRunAt = new Date(Date.now() - 1000).toISOString();
   const before = Number(state.wallet.balance);
   const { runDueMandates } = await import('./core.ts');
@@ -194,6 +199,10 @@ test('an auto-send that would break the buffer is postponed, not sent', async ()
 test('the same mandate run is never broadcast twice', async () => {
   const m = state.mandates.find((x) => x.id === 'md-1');
   assert.ok(m);
+  // Only md-1 is due here, so the balance moves by md-1's total and nothing else.
+  for (const other of state.mandates) {
+    if (other.id !== 'md-1') other.nextRunAt = new Date(Date.now() + 86_400_000).toISOString();
+  }
   const scheduledAt = new Date(Date.now() - 1000).toISOString();
   m.nextRunAt = scheduledAt;
   const { runDueMandates } = await import('./core.ts');

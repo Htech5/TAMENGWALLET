@@ -471,7 +471,10 @@ function parseWithRules(text: string, injection: string[]): { draft: DraftIntent
 
   // \b on the verb matters: without it "au-to send" reads as "to send" and invents a
   // contact called "Send".
-  const nameHint = lower.match(/\b(?:to|ke|for|buat|kepada)\s+([a-z][a-z'’-]*)/)?.[1] ?? null;
+  // Matched on the original text, not on `lower`, so the name keeps the owner's own
+  // capitalisation: "Adik" here, "Adik" from the model. The two readers must not give
+  // different answers for the same sentence, or the reply depends on which one ran.
+  const nameHint = text.match(/\b(?:to|ke|for|buat|kepada)\s+([A-Za-z][A-Za-z'’-]*)/i)?.[1] ?? null;
 
   let kind: IntentKind = 'help';
   if (BLOCKED.test(lower) && !SEND_VERB.test(lower)) kind = 'blocked_report';

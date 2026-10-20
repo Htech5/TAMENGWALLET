@@ -211,7 +211,11 @@ test('an amount the model invented is dropped instead of being sent', async () =
 
   // "500" is nowhere in the message, so it is a guess. The server turns a null amount
   // into a clarify card, which is the safe way to be wrong.
-  const intent = parseIntent('send 10 USDC to Adik');
+  // The sentence has to be one the rule reader cannot read: the model is only asked
+  // about those, so on a sentence the rules already read there is no model answer to
+  // drop. The amount in this sentence is written in words, which the rules cannot see.
+  const intent = parseIntent('tolong transferin ke ibu dua puluh lima usdc ya');
+  assert.equal(getLastReader(), 'llm', 'the model must be the one answering here');
   assert.equal(intent.amount, null);
 });
 
