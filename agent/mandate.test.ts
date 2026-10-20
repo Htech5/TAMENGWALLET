@@ -190,10 +190,10 @@ test('an auto-send that asks for everything still goes to the gate', () => {
   assert.equal(intent.kind, 'send');
 });
 
-test('the demo sentence moves no money on the real pipeline', () => {
+test('the demo sentence moves no money on the real pipeline', async () => {
   reset();
   const before = state.wallet.balance;
-  const res = chat('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
+  const res = await chat('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
   assert.equal(state.wallet.balance, before, 'nothing may leave the wallet while a mandate is only being drafted');
   assert.equal(res.card?.type, 'mandate_draft');
   reset();
@@ -201,9 +201,9 @@ test('the demo sentence moves no money on the real pipeline', () => {
 
 // --- the draft the owner actually sees ---------------------------------------
 
-test('the draft card shows the numbers the owner said, not a template', () => {
+test('the draft card shows the numbers the owner said, not a template', async () => {
   reset();
-  const res = chat('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
+  const res = await chat('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
   assert.equal(res.card?.type, 'mandate_draft');
   const card = res.card as { summary: string; mandate: { recipients: { contactId: string; amount: string }[]; minBalance: string; schedule: { type: string; dayOfMonth?: number } } };
   assert.deepEqual(
@@ -217,9 +217,9 @@ test('the draft card shows the numbers the owner said, not a template', () => {
   reset();
 });
 
-test('a split auto-send keeps every recipient the owner named', () => {
+test('a split auto-send keeps every recipient the owner named', async () => {
   reset();
-  const res = chat('auto-send every month: 60 to Ibu, 20 to Adik, 20 to tabungan');
+  const res = await chat('auto-send every month: 60 to Ibu, 20 to Adik, 20 to tabungan');
   assert.equal(res.card?.type, 'mandate_draft');
   const card = res.card as { mandate: { recipients: { contactId: string; amount: string }[]; total?: string } };
   assert.deepEqual(
@@ -233,29 +233,29 @@ test('a split auto-send keeps every recipient the owner named', () => {
   reset();
 });
 
-test('an auto-send with no details asks back instead of drafting invented money', () => {
+test('an auto-send with no details asks back instead of drafting invented money', async () => {
   reset();
-  const res = chat('set up monthly auto send');
+  const res = await chat('set up monthly auto send');
   assert.notEqual(res.card?.type, 'mandate_draft');
   assert.ok(res.reply.length > 0);
   reset();
 });
 
-test('an auto-send to an unknown name asks instead of guessing', () => {
+test('an auto-send to an unknown name asks instead of guessing', async () => {
   reset();
-  const res = chat('tiap bulan kirim 50 USDC ke Budi');
+  const res = await chat('tiap bulan kirim 50 USDC ke Budi');
   assert.notEqual(res.card?.type, 'mandate_draft');
   assert.match(res.reply, /Budi/);
   reset();
 });
 
-test('confirming the draft creates the mandate the owner described', () => {
+test('confirming the draft creates the mandate the owner described', async () => {
   reset();
-  const res = chat('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
+  const res = await chat('Tiap tanggal 1 kirim 100 USDC ke Ibu, sisakan minimal 20 USDC');
   assert.equal(res.card?.type, 'mandate_draft');
   const intentId = (res.card as { intentId: string }).intentId;
 
-  const out = confirm(intentId, true, '123456');
+  const out = await confirm(intentId, true, '123456');
   assert.equal(out.status, 'executed');
   assert.ok(out.mandate);
   assert.deepEqual(

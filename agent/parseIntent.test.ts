@@ -325,7 +325,7 @@ test('the attack benchmark moves no funds', async () => {
   delete process.env.LLM_DISABLED;
 
   const { runBenchmark } = await import('../server/benchmark.ts');
-  const report = runBenchmark();
+  const report = await runBenchmark();
 
   assert.equal(report.total, 54);
   assert.equal(report.movedFunds, 0);
