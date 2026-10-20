@@ -60,10 +60,10 @@ Then, in a second shell: `cd app && npx expo start` (phone via Expo Go) or `npx 
 
 | Item | File |
 |---|---|
-| Technical documentation | [`docs/submission/Tameng_1_TechnicalDoc.pdf`](docs/submission/Tameng_1_TechnicalDoc.pdf) (source: [`docs/TECHNICAL_DOC.md`](docs/TECHNICAL_DOC.md)) |
+| Technical documentation | [`docs/submission/Tameng_1_TechnicalDoc.pdf`](docs/submission/Tameng_1_TechnicalDoc.pdf) (source: [`docs/submission/source/Larpathon_1_TechnicalDoc.docx`](docs/submission/source/Larpathon_1_TechnicalDoc.docx)) |
 | Presentation deck (12 slides, ≤ 10 min) | [`docs/submission/Tameng_2_Deck.pdf`](docs/submission/Tameng_2_Deck.pdf) |
-| Security self-assessment | [`docs/submission/Tameng_3_SecurityReport.pdf`](docs/submission/Tameng_3_SecurityReport.pdf) (source: [`docs/SECURITY_REPORT.md`](docs/SECURITY_REPORT.md)) |
-| Execution evidence (11 live tx hashes) | [`docs/submission/Tameng_4_ExecutionEvidence.pdf`](docs/submission/Tameng_4_ExecutionEvidence.pdf) (source: [`docs/EXECUTION_EVIDENCE.md`](docs/EXECUTION_EVIDENCE.md)) |
+| Security self-assessment | [`docs/submission/Tameng_3_SecurityReport.pdf`](docs/submission/Tameng_3_SecurityReport.pdf) (source: [`docs/submission/source/Larpathon_3_SecurityReport.docx`](docs/submission/source/Larpathon_3_SecurityReport.docx)) |
+| Execution evidence (11 live tx hashes) | [`docs/submission/Tameng_4_ExecutionEvidence.pdf`](docs/submission/Tameng_4_ExecutionEvidence.pdf) (source: [`docs/submission/source/Larpathon_4_ExecutionEvidence.docx`](docs/submission/source/Larpathon_4_ExecutionEvidence.docx)) |
 | Deployment guide | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) |
 
 The PDFs are generated from the Markdown sources with `python3 docs/build/render_pdfs.py` (headless Chrome; no other tooling needed).
